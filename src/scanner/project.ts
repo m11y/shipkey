@@ -198,6 +198,19 @@ function buildTargets(
   return targets;
 }
 
+// Shorten a relative path like fish shell:
+// root full, middle segments first-letter only, last segment full
+// deploy/terraform/environments/prod → dte-prod
+// apps/web → a-web
+// prod → prod (single segment, no abbreviation)
+function shortenRelPath(rel: string): string {
+  const segments = rel.split(/[\\/]/).filter(Boolean);
+  if (segments.length <= 1) return segments[0] ?? "";
+  const middle = segments.slice(0, -1).map((s) => s[0]).join("");
+  const last = segments[segments.length - 1];
+  return `${middle}-${last}`;
+}
+
 async function detectProjectName(dir: string, scanRoot: string): Promise<string> {
   // 1. package.json name
   try {
@@ -222,7 +235,7 @@ async function detectProjectName(dir: string, scanRoot: string): Promise<string>
       const repoName = basename(gitRoot);
       const rel = relative(gitRoot, dir);
       if (!rel || rel === ".") return repoName;
-      return `${repoName}-${rel.replace(/[\\/]/g, "-")}`;
+      return `${repoName}-${shortenRelPath(rel)}`;
     }
   } catch {
     // not a git repo or git not available
@@ -231,7 +244,7 @@ async function detectProjectName(dir: string, scanRoot: string): Promise<string>
   // 3. Fallback: relative path from scanRoot
   const rel = relative(scanRoot, dir);
   if (rel && rel !== ".") {
-    return `${basename(scanRoot)}-${rel.replace(/[\\/]/g, "-")}`;
+    return `${basename(scanRoot)}-${shortenRelPath(rel)}`;
   }
   return basename(dir);
 }
