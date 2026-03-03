@@ -211,6 +211,27 @@ function shortenRelPath(rel: string): string {
   return `${middle}-${last}`;
 }
 
+// Extract repo name from git remote URL (e.g. "heara-server" from "neobea-ai/heara-server.git")
+async function detectGitRepoName(cwd: string): Promise<string | null> {
+  try {
+    const proc = Bun.spawn(["git", "remote", "get-url", "origin"], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const url = (await new Response(proc.stdout).text()).trim();
+    const exitCode = await proc.exited;
+    if (exitCode !== 0 || !url) return null;
+
+    // SSH: git@github.com:owner/repo.git
+    const sshMatch = /[:\/]([^/]+?)(?:\.git)?$/.exec(url);
+    if (sshMatch) return sshMatch[1];
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function detectProjectName(dir: string, scanRoot: string): Promise<string> {
   // 1. package.json name
   try {
@@ -221,7 +242,7 @@ async function detectProjectName(dir: string, scanRoot: string): Promise<string>
     // no package.json or invalid
   }
 
-  // 2. Git root of scanRoot as anchor (not dir itself, to handle nested git repos)
+  // 2. Git: use remote repo name (not local dir name which may differ after clone)
   try {
     const proc = Bun.spawn(["git", "rev-parse", "--show-toplevel"], {
       cwd: scanRoot,
@@ -232,7 +253,7 @@ async function detectProjectName(dir: string, scanRoot: string): Promise<string>
     const exitCode = await proc.exited;
 
     if (exitCode === 0 && gitRoot) {
-      const repoName = basename(gitRoot);
+      const repoName = await detectGitRepoName(scanRoot) ?? basename(gitRoot);
       const rel = relative(gitRoot, dir);
       if (!rel || rel === ".") return repoName;
       return `${repoName}-${shortenRelPath(rel)}`;
