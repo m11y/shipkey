@@ -6,7 +6,7 @@ import { loadConfig, buildSecretRefMap } from "../config";
 import { scanProjectRecursive, printScanSummary } from "../scanner/project";
 import type { ShipkeyConfig, TargetConfig } from "../config";
 import { getBackend } from "../backends";
-import { scan } from "../scanner";
+import { scanSingleDir } from "../scanner";
 import { guessProvider } from "../providers";
 import type { SecretBackend } from "../backends/types";
 import { writeEnvFile } from "../env-writer";
@@ -399,7 +399,7 @@ async function handlePush(
   backend: SecretBackend
 ): Promise<Response> {
   try {
-    const result = await scan(projectRoot);
+    const result = await scanSingleDir(projectRoot);
 
     const entries = result.groups.flatMap((g) =>
       g.files
