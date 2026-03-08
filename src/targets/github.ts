@@ -5,28 +5,22 @@ export class GitHubTarget implements SyncTarget {
 
   async checkStatus(): Promise<TargetStatus> {
     try {
-      const versionProc = Bun.spawn(["gh", "--version"], {
+      // Single call: gh auth status checks both installation and authentication
+      const proc = Bun.spawn(["gh", "auth", "status"], {
         stdout: "pipe",
         stderr: "pipe",
       });
-      await versionProc.exited;
-      if (versionProc.exitCode !== 0) return "not_installed";
+      const stderr = await new Response(proc.stderr).text();
+      await proc.exited;
+      if (proc.exitCode !== 0) {
+        return stderr.includes("not logged") || stderr.includes("no accounts")
+          ? "not_authenticated"
+          : "not_installed";
+      }
+      return "ready";
     } catch {
       return "not_installed";
     }
-
-    try {
-      const authProc = Bun.spawn(["gh", "auth", "status"], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      await authProc.exited;
-      if (authProc.exitCode !== 0) return "not_authenticated";
-    } catch {
-      return "not_authenticated";
-    }
-
-    return "ready";
   }
 
   async isAvailable(): Promise<boolean> {

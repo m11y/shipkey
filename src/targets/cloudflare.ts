@@ -5,31 +5,23 @@ export class CloudflareTarget implements SyncTarget {
 
   async checkStatus(): Promise<TargetStatus> {
     try {
-      const versionProc = Bun.spawn(["wrangler", "--version"], {
+      // Single call: wrangler whoami checks both installation and authentication
+      const proc = Bun.spawn(["wrangler", "whoami"], {
         stdout: "pipe",
         stderr: "pipe",
       });
-      await versionProc.exited;
-      if (versionProc.exitCode !== 0) return "not_installed";
+      const stderr = await new Response(proc.stderr).text();
+      await proc.exited;
+      if (proc.exitCode !== 0) {
+        if (stderr.includes("not authenticated") || stderr.includes("not logged")) {
+          return "not_authenticated";
+        }
+        return "not_installed";
+      }
+      return "ready";
     } catch {
       return "not_installed";
     }
-
-    try {
-      const whoamiProc = Bun.spawn(["wrangler", "whoami"], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const stderr = await new Response(whoamiProc.stderr).text();
-      await whoamiProc.exited;
-      if (whoamiProc.exitCode !== 0 || stderr.includes("not authenticated")) {
-        return "not_authenticated";
-      }
-    } catch {
-      return "not_authenticated";
-    }
-
-    return "ready";
   }
 
   async isAvailable(): Promise<boolean> {

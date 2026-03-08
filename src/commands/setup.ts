@@ -479,6 +479,7 @@ function startServer(
 
   return Bun.serve({
     port: port ?? 0,
+    idleTimeout: 120,
     async fetch(req) {
       const url = new URL(req.url);
 
@@ -631,12 +632,6 @@ export const setupCommand = new Command("setup")
     }
 
     const backend = getBackend(config.backend);
-    if (!(await backend.isAvailable())) {
-      console.warn(
-        `  Warning: ${backend.name} CLI not available. Store/read operations will fail.\n` +
-        `  Run the setup wizard for installation instructions.\n`
-      );
-    }
 
     const configPath = join(projectRoot, "shipkey.json");
     const port = opts.port ? parseInt(opts.port, 10) : undefined;
