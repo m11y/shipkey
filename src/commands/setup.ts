@@ -145,20 +145,19 @@ async function getFieldStatus(
     return { statuses, backendStatus };
   }
 
-  // 1Password-specific optimization: use listVaultItems + getItemFields
-  if ("listVaultItems" in backend && "getItemFields" in backend) {
+  // 1Password-specific optimization: batch all item reads in one pass
+  if ("getAllFields" in backend) {
     const opBackend = backend as any;
-    const vaultItems = await opBackend.listVaultItems(config.vault);
-    const existingProviders = new Set(vaultItems.map((item: any) => item.title));
+    const allFields = await opBackend.getAllFields(config.vault) as Map<string, { section: string; label: string }[]>;
     const sectionName = `${config.project}-${env}`;
 
     for (const [providerName, provider] of Object.entries(config.providers)) {
       statuses[providerName] = {};
+      const itemFields = allFields.get(providerName);
 
-      if (existingProviders.has(providerName)) {
-        const fields = await opBackend.getItemFields(providerName, config.vault);
+      if (itemFields) {
         const storedFields = new Set<string>();
-        for (const f of fields) {
+        for (const f of itemFields) {
           if (f.section === sectionName) {
             storedFields.add(f.label);
           }
@@ -467,6 +466,17 @@ function startServer(
     return JSON.parse(raw) as ShipkeyConfig;
   }
 
+  // Cache status results to minimize op CLI calls (each call triggers macOS TCC prompts)
+  const statusCache = new Map<string, {
+    data: { field_status: Record<string, Record<string, "stored" | "missing">>; backend_status: BackendStatus; backend_name: string; target_status: Record<string, TargetStatus> };
+    time: number;
+  }>();
+  const STATUS_CACHE_TTL = 60_000; // 60 seconds
+
+  function invalidateStatusCache() {
+    statusCache.clear();
+  }
+
   return Bun.serve({
     port: port ?? 0,
     async fetch(req) {
@@ -505,6 +515,13 @@ function startServer(
         if (url.pathname === "/api/status" && req.method === "GET") {
           const config = await reloadConfig();
           const currentEnv = resolveEnv(url);
+          const cacheKey = currentEnv;
+          const cached = statusCache.get(cacheKey);
+
+          if (cached && Date.now() - cached.time < STATUS_CACHE_TTL) {
+            return json(cached.data);
+          }
+
           const { statuses, backendStatus } = await getFieldStatus(config, currentEnv, backend);
 
           // Check target CLI status
@@ -520,25 +537,33 @@ function startServer(
             );
           }
 
-          return json({
+          const data = {
             field_status: statuses,
             backend_status: backendStatus,
             backend_name: config.backend || "1password",
             target_status: targetStatus,
-          });
+          };
+
+          statusCache.set(cacheKey, { data, time: Date.now() });
+
+          return json(data);
         }
 
         if (url.pathname === "/api/push" && req.method === "POST") {
           const config = await reloadConfig();
           const currentEnv = resolveEnv(url);
-          return handlePush(config, currentEnv, projectRoot, backend);
+          const result = await handlePush(config, currentEnv, projectRoot, backend);
+          invalidateStatusCache();
+          return result;
         }
 
         if (url.pathname === "/api/store" && req.method === "POST") {
           const config = await reloadConfig();
           const body = await req.json();
           const currentEnv = resolveEnv(url, body);
-          return handleStore(config, currentEnv, projectRoot, body, backend);
+          const result = await handleStore(config, currentEnv, projectRoot, body, backend);
+          invalidateStatusCache();
+          return result;
         }
 
         if (url.pathname === "/api/sync" && req.method === "POST") {

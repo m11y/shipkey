@@ -114,6 +114,55 @@ export class OnePasswordBackend implements SecretBackend {
     }
   }
 
+  async getAllFields(
+    vault: string,
+  ): Promise<Map<string, { section: string; label: string }[]>> {
+    const result = new Map<string, { section: string; label: string }[]>();
+    try {
+      const raw = await exec([
+        "item",
+        "list",
+        "--vault",
+        vault,
+        "--format",
+        "json",
+      ]);
+      const items = JSON.parse(raw) as { title: string; id: string }[];
+
+      // Fetch all items in one sequential batch (sequential to reduce biometric prompts)
+      for (const item of items) {
+        try {
+          const detail = await exec([
+            "item",
+            "get",
+            item.id,
+            "--vault",
+            vault,
+            "--format",
+            "json",
+          ]);
+          const parsed = JSON.parse(detail);
+          if (parsed.fields) {
+            result.set(
+              item.title,
+              parsed.fields
+                .filter((f: any) => f.section?.label && f.label)
+                .map((f: any) => ({
+                  section: f.section.label as string,
+                  label: f.label as string,
+                }))
+            );
+          }
+        } catch {
+          // skip items that can't be read
+        }
+      }
+    } catch {
+      // vault doesn't exist or not accessible
+    }
+    return result;
+  }
+
   async ensureVault(vault: string): Promise<void> {
     try {
       await exec(["vault", "get", vault]);
