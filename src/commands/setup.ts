@@ -113,7 +113,7 @@ function corsHeaders(): Record<string, string> {
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json", ...corsHeaders() },
+    headers: { "Content-Type": "application/json; charset=utf-8", ...corsHeaders() },
   });
 }
 
@@ -367,7 +367,7 @@ async function handleSync(
         });
         secrets.push({ name: envKey, value });
       } catch (err) {
-        readFailed.push({ name: envKey, error: "Key not found in password manager — store it first" });
+        readFailed.push({ name: envKey, error: "Key not found in password manager - store it first" });
       }
     };
 
@@ -382,7 +382,7 @@ async function handleSync(
             const value = await (backend as any).readRaw(ref);
             secrets.push({ name, value });
           } catch {
-            readFailed.push({ name, error: "Key not found in password manager — store it first" });
+            readFailed.push({ name, error: "Key not found in password manager - store it first" });
           }
         } else {
           await readSecret(name);
