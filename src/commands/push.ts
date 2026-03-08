@@ -7,7 +7,7 @@ import { resolve, basename } from "path";
 
 export const pushCommand = new Command("push")
   .description("Push env values from local files to your password manager")
-  .option("-e, --env <env>", "environment (dev/prod)", "dev")
+  .option("-e, --env <env>", "environment (dev/prod)", "prod")
   .option("--vault <vault>", "Vault or folder name", "shipkey")
   .option("--project <name>", "project name (defaults to directory name)")
   .argument("[dir]", "project directory", ".")

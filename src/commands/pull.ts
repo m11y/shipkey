@@ -6,7 +6,7 @@ import { resolve, join, basename } from "path";
 
 export const pullCommand = new Command("pull")
   .description("Pull keys from your password manager and generate env files")
-  .option("-e, --env <env>", "environment (dev/prod)", "dev")
+  .option("-e, --env <env>", "environment (dev/prod)", "prod")
   .option("--vault <vault>", "Vault or folder name", "shipkey")
   .option("--project <name>", "project name (defaults to directory name)")
   .option("--no-envrc", "skip .envrc generation")
