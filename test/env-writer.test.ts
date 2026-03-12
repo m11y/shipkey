@@ -118,3 +118,51 @@ describe("writeEnvFile", () => {
     expect(filename2).toBe(".dev.vars");
   });
 });
+
+describe("integration: pull + existing .env", () => {
+  test("full pull scenario: existing .env preserved, new keys merged, updated keys changed", async () => {
+    writeFileSync(
+      join(TMP, ".env"),
+      [
+        "DATABASE_URL=postgres://localhost:5432/mydb",
+        "REDIS_URL=redis://localhost:6379",
+        "EXISTING_SECRET=should-not-be-lost",
+        "",
+      ].join("\n")
+    );
+
+    // Simulate pull: 2 new keys + 1 existing key updated
+    const pulled = {
+      COINBASE_API_KEY: "test-key-123",
+      COINBASE_API_SECRET: "test-secret-456",
+      REDIS_URL: "redis://new-host:6379",
+    };
+
+    const file = await writeEnvFile(TMP, pulled);
+    expect(file).toBe(".env");
+
+    const content = readFileSync(join(TMP, ".env"), "utf-8");
+    // Existing untouched key preserved
+    expect(content).toContain("DATABASE_URL=postgres://localhost:5432/mydb");
+    expect(content).toContain("EXISTING_SECRET=should-not-be-lost");
+    // Updated key
+    expect(content).toContain("REDIS_URL=redis://new-host:6379");
+    expect(content).not.toContain("redis://localhost:6379");
+    // New keys appended
+    expect(content).toContain("COINBASE_API_KEY=test-key-123");
+    expect(content).toContain("COINBASE_API_SECRET=test-secret-456");
+  });
+
+  test("multiple pulls don't duplicate keys", async () => {
+    writeFileSync(join(TMP, ".env"), "DB=postgres\n");
+
+    await writeEnvFile(TMP, { API_KEY: "v1" });
+    await writeEnvFile(TMP, { API_KEY: "v2" });
+
+    const content = readFileSync(join(TMP, ".env"), "utf-8");
+    const matches = content.match(/API_KEY=/g);
+    expect(matches).toHaveLength(1);
+    expect(content).toContain("API_KEY=v2");
+    expect(content).toContain("DB=postgres");
+  });
+});
