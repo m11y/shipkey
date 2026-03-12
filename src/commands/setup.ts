@@ -8,6 +8,7 @@ import { getBackend } from "../backends";
 import { scan } from "../scanner";
 import { guessProvider } from "../providers";
 import type { SecretBackend } from "../backends/types";
+import { writeEnvFile } from "../env-writer";
 import { GitHubTarget } from "../targets/github";
 import { CloudflareTarget } from "../targets/cloudflare";
 import type { SyncTarget, TargetStatus } from "../targets/types";
@@ -195,47 +196,6 @@ async function getFieldStatus(
   return { statuses, backendStatus };
 }
 
-async function writeLocalEnv(
-  projectRoot: string,
-  envVars: Record<string, string>
-): Promise<void> {
-  // Determine target file: .dev.vars for Cloudflare workers, .env.local otherwise
-  const hasWrangler = await readFile(join(projectRoot, "wrangler.toml"), "utf-8")
-    .then(() => true)
-    .catch(() => false);
-
-  const envFile = hasWrangler ? ".dev.vars" : ".env.local";
-  const envPath = join(projectRoot, envFile);
-
-  // Read existing content
-  let existing = "";
-  try {
-    existing = await readFile(envPath, "utf-8");
-  } catch {
-    // file doesn't exist yet
-  }
-
-  // Parse existing lines, update or append
-  const lines = existing ? existing.split("\n") : [];
-  for (const [key, value] of Object.entries(envVars)) {
-    const lineIndex = lines.findIndex((l) => l.startsWith(`${key}=`));
-    const newLine = `${key}=${value}`;
-    if (lineIndex !== -1) {
-      lines[lineIndex] = newLine;
-    } else {
-      // Append, ensuring there's a newline before if file had content
-      if (lines.length > 0 && lines[lines.length - 1] === "") {
-        lines.splice(lines.length - 1, 0, newLine);
-      } else {
-        lines.push(newLine);
-      }
-    }
-  }
-
-  const content = lines.join("\n") + (lines[lines.length - 1] !== "" ? "\n" : "");
-  await writeFile(envPath, content);
-}
-
 async function handleStore(
   config: ShipkeyConfig,
   env: string,
@@ -303,7 +263,7 @@ async function handleStore(
   // Write to local env file
   if (Object.keys(localEnvVars).length > 0) {
     try {
-      await writeLocalEnv(projectRoot, localEnvVars);
+      await writeEnvFile(projectRoot, localEnvVars);
     } catch {
       // Don't fail the whole request if local write fails
     }
