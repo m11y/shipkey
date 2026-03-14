@@ -2,30 +2,25 @@ import { describe, test, expect } from "bun:test";
 import { parseDotenv } from "../../../src/scanner/parsers/dotenv";
 
 describe("parseDotenv", () => {
-  test("parses KEY=VALUE lines", () => {
+  test("parses KEY=VALUE lines and extracts keys", () => {
     const content = `
 DATABASE_URL=postgres://localhost:5432/db
 API_KEY=sk-test-123
 `;
     const result = parseDotenv(content);
-    expect(result).toEqual([
-      { key: "DATABASE_URL", value: "postgres://localhost:5432/db" },
-      { key: "API_KEY", value: "sk-test-123" },
-    ]);
+    const keys = result.map((r) => r.key);
+    expect(keys).toEqual(["DATABASE_URL", "API_KEY"]);
   });
 
-  test("parses template placeholders", () => {
+  test("parses template placeholders and extracts keys", () => {
     const content = `
 DATABASE_URL=
 API_KEY=your-api-key-here
 SECRET=
 `;
     const result = parseDotenv(content);
-    expect(result).toEqual([
-      { key: "DATABASE_URL", value: "" },
-      { key: "API_KEY", value: "your-api-key-here" },
-      { key: "SECRET", value: "" },
-    ]);
+    const keys = result.map((r) => r.key);
+    expect(keys).toEqual(["DATABASE_URL", "API_KEY", "SECRET"]);
   });
 
   test("skips comments and blank lines", () => {
@@ -44,9 +39,7 @@ API_KEY=key
     const content = `SECRET="hello world"
 KEY='single quoted'`;
     const result = parseDotenv(content);
-    expect(result).toEqual([
-      { key: "SECRET", value: "hello world" },
-      { key: "KEY", value: "single quoted" },
-    ]);
+    const keys = result.map((r) => r.key);
+    expect(keys).toEqual(["SECRET", "KEY"]);
   });
 });

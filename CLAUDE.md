@@ -5,6 +5,11 @@ CLI tool and core library for managing developer API keys securely.
 **Repo:** `chekusu/shipkey`
 **Role:** Core product code — CLI binary, `@shipkey/core` npm package, provider detection, secret backends.
 
+## Development Rules
+
+- **Unit tests required**: Every code change must include corresponding unit tests. Tests live in `test/` mirroring `src/` structure (e.g., `src/commands/pull.ts` → `test/commands/pull.test.ts`). Run with `bun test`.
+- **Build & install locally after changes**: After modifying code, always run `bun run build && npm link` so the global `shipkey` command uses the latest build. The symlink at `/opt/homebrew/bin/shipkey` points to `./dist/index.js` in this repo.
+
 ## Repository Structure
 
 - `src/` — CLI source code (commands: setup, push, pull, sync, list, scan)
