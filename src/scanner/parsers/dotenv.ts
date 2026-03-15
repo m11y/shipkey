@@ -8,7 +8,7 @@ export interface ParsedVar {
 
 export function parseDotenv(content: string): ParsedVar[] {
   const parsed = parse(content);
-  const { parsed: expanded } = expand({ parsed });
+  const { parsed: expanded } = expand({ parsed, processEnv: {} });
 
   return Object.entries(expanded ?? parsed).map(([key, value]) => ({
     key,
