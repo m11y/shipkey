@@ -122,6 +122,38 @@ export const pullCommand = new Command("pull")
       await writeFile(envPath, outputLines.join("\n"));
       const parts = [`${updatedCount} updated`];
       if (newCount > 0) parts.push(`${newCount} new`);
+
+      // Fill in defaults from shipkey.json for keys not yet in .env
+      let defaultsCount = 0;
+      const defaults = config.defaults;
+      if (defaults && Object.keys(defaults).length > 0) {
+        const content = await readFile(envPath, "utf-8");
+        const existingKeys = new Set<string>();
+        for (const line of content.split("\n")) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith("#")) continue;
+          const eqIdx = trimmed.indexOf("=");
+          if (eqIdx !== -1) existingKeys.add(trimmed.slice(0, eqIdx));
+        }
+
+        const missingDefaults = Object.entries(defaults).filter(
+          ([key]) => !existingKeys.has(key)
+        );
+
+        if (missingDefaults.length > 0) {
+          const lines = content.split("\n");
+          if (lines.length > 0 && lines[lines.length - 1]?.trim() !== "") {
+            lines.push("");
+          }
+          for (const [key, value] of missingDefaults) {
+            lines.push(`${key}=${value}`);
+            defaultsCount++;
+          }
+          await writeFile(envPath, lines.join("\n"));
+        }
+      }
+
+      if (defaultsCount > 0) parts.push(`${defaultsCount} defaults`);
       console.log(`  ✓ .env (${parts.join(", ")})`);
 
       if (opts.envrc) {

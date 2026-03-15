@@ -21,6 +21,7 @@ export interface ShipkeyConfig {
   project: string;
   vault: string;
   backend?: string; // "1password" | "bitwarden", defaults to "1password"
+  defaults?: Record<string, string>; // non-secret keys with default values
   providers?: Record<string, ProviderConfig>;
   targets?: {
     github?: TargetConfig;

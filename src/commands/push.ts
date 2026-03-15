@@ -45,12 +45,13 @@ export const pushCommand = new Command("push")
       }
 
       const result = await scanSingleDir(d);
+      const defaultKeys = new Set(Object.keys(config.defaults ?? {}));
       const entries = result.groups.flatMap((g) =>
         g.files
           .filter((f) => !f.isTemplate)
           .flatMap((f) =>
             f.vars
-              .filter((v) => v.value && v.value.length > 0)
+              .filter((v) => v.value && v.value.length > 0 && !defaultKeys.has(v.key))
               .map((v) => ({
                 key: v.key,
                 value: v.value!,
