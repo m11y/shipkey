@@ -12,8 +12,8 @@
   },
   "scripts": {
     "dev": "bun run src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target node",
-    "compile": "bun build src/index.ts --compile --outfile shipkey",
+    "build": "bun build src/index.ts --outdir dist --target node --define \"__GIT_COMMIT__='$(git rev-parse --short HEAD)'\"",
+    "compile": "bun build src/index.ts --compile --outfile shipkey --define \"__GIT_COMMIT__='$(git rev-parse --short HEAD)'\"",
     "test": "bun test"
   },
   "dependencies": {
