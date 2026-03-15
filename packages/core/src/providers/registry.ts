@@ -298,6 +298,20 @@ export function guessProvider(key: string): string {
   return "General";
 }
 
+const SECRET_PATTERNS = /(?:SECRET|_KEY|TOKEN|PASSWORD|CREDENTIAL|PRIVATE|AUTH)/i;
+
+/**
+ * Determine if an env key is likely a secret (should go to password manager)
+ * vs a plain config value (should go to shipkey.json defaults).
+ */
+export function isSecretKey(key: string): boolean {
+  // Matches a known provider → secret
+  if (guessProvider(key) !== "General") return true;
+  // Key name contains sensitive words → secret
+  if (SECRET_PATTERNS.test(key)) return true;
+  return false;
+}
+
 export function groupByProvider(
   envKeys: string[],
 ): Record<string, ProviderConfig> {

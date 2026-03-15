@@ -5,7 +5,7 @@ import { scanWorkflows, detectGitRepo } from "./parsers/workflow";
 import { scanWrangler } from "./parsers/wrangler";
 import { scanPackageJsons } from "./parsers/packagejson";
 import { inferPermissions } from "./permissions";
-import { groupByProvider } from "../providers";
+import { groupByProvider, isSecretKey } from "../providers";
 import type { ShipkeyConfig, TargetConfig } from "../config";
 import type { ScanResult } from "./types";
 import type { WorkflowScanResult } from "./parsers/workflow";
@@ -49,7 +49,11 @@ export async function scanProject(
     allKeys.add(secret);
   }
 
-  const providers = groupByProvider([...allKeys]);
+  // Split keys: secrets → providers, non-secrets → defaults
+  const secretKeys = [...allKeys].filter((k) => isSecretKey(k));
+  const defaultKeys = [...allKeys].filter((k) => !isSecretKey(k));
+
+  const providers = groupByProvider(secretKeys);
 
   inferPermissions(
     providers,
@@ -66,11 +70,19 @@ export async function scanProject(
     envResult
   );
 
+  // Build defaults with values from non-template .env files
+  const envValues = collectEnvValues(envResult);
+  const defaults: Record<string, string> = {};
+  for (const key of defaultKeys) {
+    defaults[key] = envValues.get(key) ?? "";
+  }
+
   const projectName = await detectProjectName(projectRoot, scanRoot);
 
   const config: ShipkeyConfig = {
     project: projectName,
     vault: "shipkey",
+    ...(Object.keys(defaults).length > 0 && { defaults }),
     providers,
     ...(Object.keys(targets).length > 0 && { targets }),
   };
@@ -119,7 +131,10 @@ export async function scanProjectRecursive(
     allKeys.add(secret);
   }
 
-  const providers = groupByProvider([...allKeys]);
+  const secretKeys = [...allKeys].filter((k) => isSecretKey(k));
+  const defaultKeys = [...allKeys].filter((k) => !isSecretKey(k));
+
+  const providers = groupByProvider(secretKeys);
 
   inferPermissions(
     providers,
@@ -136,11 +151,18 @@ export async function scanProjectRecursive(
     envResult
   );
 
+  const envValues = collectEnvValues(envResult);
+  const defaults: Record<string, string> = {};
+  for (const key of defaultKeys) {
+    defaults[key] = envValues.get(key) ?? "";
+  }
+
   const projectName = await detectProjectName(projectRoot);
 
   const config: ShipkeyConfig = {
     project: projectName,
     vault: "shipkey",
+    ...(Object.keys(defaults).length > 0 && { defaults }),
     providers,
     ...(Object.keys(targets).length > 0 && { targets }),
   };
@@ -168,6 +190,22 @@ function collectEnvKeys(result: ScanResult): string[] {
     }
   }
   return [...keys];
+}
+
+/** Collect key→value from non-template .env files (first real value wins) */
+function collectEnvValues(result: ScanResult): Map<string, string> {
+  const values = new Map<string, string>();
+  for (const group of result.groups) {
+    for (const file of group.files) {
+      if (file.isTemplate) continue;
+      for (const v of file.vars) {
+        if (!values.has(v.key) && v.value != null) {
+          values.set(v.key, v.value);
+        }
+      }
+    }
+  }
+  return values;
 }
 
 function buildTargets(
@@ -296,13 +334,22 @@ export function printScanSummary({ config, stats, workflowSecrets }: ProjectScan
 
   const providerNames = Object.keys(config.providers || {});
   if (providerNames.length > 0) {
-    console.log(`\n  Providers (${providerNames.length}):`);
+    console.log(`\n  Secrets → password manager (${providerNames.length} providers):`);
     for (const [name, provider] of Object.entries(config.providers || {})) {
       console.log(`    ${name}: ${provider.fields.join(", ")}`);
       if (provider.permissions && provider.permissions.length > 0) {
         const perms = provider.permissions.map((p) => p.permission).join(", ");
         console.log(`      → ${perms}`);
       }
+    }
+  }
+
+  const defaultEntries = Object.entries(config.defaults || {});
+  if (defaultEntries.length > 0) {
+    console.log(`\n  Defaults → shipkey.json (${defaultEntries.length} keys):`);
+    for (const [key, value] of defaultEntries) {
+      const display = value ? `${key}=${value}` : key;
+      console.log(`    ${display}`);
     }
   }
 

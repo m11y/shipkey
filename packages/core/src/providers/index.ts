@@ -3,4 +3,5 @@ export {
   PROVIDERS,
   guessProvider,
   groupByProvider,
+  isSecretKey,
 } from "./registry";

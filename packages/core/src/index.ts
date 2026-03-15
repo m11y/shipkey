@@ -18,6 +18,7 @@ export {
   PROVIDERS,
   guessProvider,
   groupByProvider,
+  isSecretKey,
 } from "./providers/registry";
 
 // Utilities
