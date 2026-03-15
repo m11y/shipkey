@@ -8,7 +8,7 @@ CLI tool and core library for managing developer API keys securely.
 ## Development Rules
 
 - **Unit tests required**: Every code change must include corresponding unit tests. Tests live in `test/` mirroring `src/` structure (e.g., `src/commands/pull.ts` → `test/commands/pull.test.ts`). Run with `bun test`.
-- **Build & install locally after changes**: After modifying code, always run `bun run build && npm link` so the global `shipkey` command uses the latest build. The symlink at `/opt/homebrew/bin/shipkey` points to `./dist/index.js` in this repo.
+- **Build & install locally after changes**: After modifying code, always run `bun build src/index.ts --compile --outfile shipkey && cp shipkey ~/.local/bin/shipkey && rm shipkey` so the global `shipkey` command uses the latest build.
 
 ## Repository Structure
 
