@@ -120,19 +120,23 @@ export const scanCommand = new Command("scan")
       console.log(`\n  [${relDir}]`);
       printScanSummary(result);
 
+      const existingConfig = existingConfigs.get(d);
+
+      // Always show diff (dry-run or not)
+      const diff = diffDefaults(existingConfig?.defaults, result.config.defaults);
+      if (diff) {
+        printDefaultsDiff(diff);
+      }
+
       if (!opts.dryRun) {
-        const existingConfig = existingConfigs.get(d);
         result.config.backend = existingConfig?.backend ?? chosenBackend ?? "1password";
 
-        // Diff defaults and prompt if changed
-        const diff = diffDefaults(existingConfig?.defaults, result.config.defaults);
+        // Prompt to accept defaults changes
         if (diff) {
-          printDefaultsDiff(diff);
           const accept = await promptYesNo(
             `\n  ${YELLOW}Update defaults in shipkey.json? [Y/n]:${RESET} `
           );
           if (!accept) {
-            // Keep existing defaults
             result.config.defaults = existingConfig?.defaults;
           }
         }
