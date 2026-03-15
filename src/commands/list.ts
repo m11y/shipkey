@@ -6,13 +6,12 @@ import { resolve, relative } from "path";
 
 export const listCommand = new Command("list")
   .description("List keys stored in your password manager")
-  .option("-e, --env <env>", "filter by environment")
+  .option("-e, --env <env>", "filter by environment (overrides shipkey.json)")
   .option("--all", "list all projects", false)
   .option("--project <name>", "project name")
   .argument("[dir]", "project directory", ".")
   .action(async (dir: string, opts) => {
     const projectRoot = resolve(dir);
-    const env = opts.env;
 
     const shipkeyDirs = await walkDirsWithShipkey(projectRoot);
 
@@ -32,6 +31,7 @@ export const listCommand = new Command("list")
       }
 
       const project = opts.all ? undefined : (opts.project || config.project);
+      const env = opts.env ?? config.env ?? "dev";
       const backend = getBackend(config.backend);
 
       if (!(await backend.isAvailable())) {

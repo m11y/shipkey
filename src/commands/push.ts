@@ -7,12 +7,11 @@ import { resolve, relative } from "path";
 
 export const pushCommand = new Command("push")
   .description("Push env values from local files to your password manager")
-  .option("-e, --env <env>", "environment (dev/prod)", "prod")
+  .option("-e, --env <env>", "environment (overrides shipkey.json)")
   .option("--vault <vault>", "Vault or folder name", "shipkey")
   .argument("[dir]", "project directory", ".")
   .action(async (dir: string, opts) => {
     const projectRoot = resolve(dir);
-    const env = opts.env;
     const vault = opts.vault;
 
     const shipkeyDirs = await walkDirsWithShipkey(projectRoot);
@@ -37,6 +36,7 @@ export const pushCommand = new Command("push")
       }
 
       const backend = getBackend(config.backend);
+      const env = opts.env ?? config.env ?? "dev";
       if (!(await backend.isAvailable())) {
         console.error(
           `  ✗ ${backend.name} CLI not available. Run 'shipkey setup' for installation instructions.`

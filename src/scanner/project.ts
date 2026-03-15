@@ -82,6 +82,7 @@ export async function scanProject(
   const config: ShipkeyConfig = {
     project: projectName,
     vault: "shipkey",
+    env: "dev",
     ...(Object.keys(defaults).length > 0 && { defaults }),
     providers,
     ...(Object.keys(targets).length > 0 && { targets }),
@@ -162,6 +163,7 @@ export async function scanProjectRecursive(
   const config: ShipkeyConfig = {
     project: projectName,
     vault: "shipkey",
+    env: "dev",
     ...(Object.keys(defaults).length > 0 && { defaults }),
     providers,
     ...(Object.keys(targets).length > 0 && { targets }),

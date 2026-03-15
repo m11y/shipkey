@@ -20,6 +20,7 @@ export interface TargetConfig {
 export interface ShipkeyConfig {
   project: string;
   vault: string;
+  env?: string; // "dev" | "prod", defaults to "dev"
   backend?: string; // "1password" | "bitwarden", defaults to "1password"
   defaults?: Record<string, string>; // non-secret keys with default values
   providers?: Record<string, ProviderConfig>;

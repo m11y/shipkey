@@ -610,7 +610,7 @@ async function openBrowser(url: string) {
 
 export const setupCommand = new Command("setup")
   .description("Launch setup wizard in browser")
-  .option("-e, --env <env>", "environment (dev/prod)", "prod")
+  .option("-e, --env <env>", "environment (overrides shipkey.json)")
   .option("--port <port>", "API server port")
   .option("--no-open", "don't auto-open browser")
   .argument("[dir]", "project directory", ".")
@@ -653,10 +653,11 @@ export const setupCommand = new Command("setup")
     }
 
     const backend = getBackend(config.backend);
+    const env = opts.env ?? config.env ?? "dev";
 
     const configPath = join(projectRoot, "shipkey.json");
     const port = opts.port ? parseInt(opts.port, 10) : undefined;
-    const server = startServer(configPath, opts.env, projectRoot, backend, port);
+    const server = startServer(configPath, env, projectRoot, backend, port);
     const actualPort = server.port;
 
     const webHost = process.env.SHIPKEY_WEB_URL || "https://shipkey.dev";
@@ -664,7 +665,7 @@ export const setupCommand = new Command("setup")
 
     console.log(`\n  shipkey setup wizard`);
     console.log(`  API: http://localhost:${actualPort}`);
-    console.log(`  Project: ${config.project} (${opts.env})\n`);
+    console.log(`  Project: ${config.project} (${env})\n`);
 
     if (opts.open) {
       await openBrowser(webUrl);

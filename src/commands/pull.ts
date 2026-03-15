@@ -7,14 +7,13 @@ import { resolve, join, relative } from "path";
 
 export const pullCommand = new Command("pull")
   .description("Pull keys from your password manager and generate env files")
-  .option("-e, --env <env>", "environment (dev/prod)", "prod")
+  .option("-e, --env <env>", "environment (overrides shipkey.json)")
   .option("--vault <vault>", "Vault or folder name", "shipkey")
   .option("--envrc", "generate .envrc (direnv)")
   .option("--dev-vars", "generate .dev.vars for Cloudflare Workers")
   .argument("[dir]", "project directory", ".")
   .action(async (dir: string, opts) => {
     const projectRoot = resolve(dir);
-    const env = opts.env;
     const vault = opts.vault;
 
     const shipkeyDirs = await walkDirsWithShipkey(projectRoot);
@@ -39,6 +38,7 @@ export const pullCommand = new Command("pull")
       }
 
       const backend = getBackend(config.backend);
+      const env = opts.env ?? config.env ?? "dev";
       if (!(await backend.isAvailable())) {
         console.error(
           `  ✗ ${backend.name} CLI not available. Run 'shipkey setup' for installation instructions.`
