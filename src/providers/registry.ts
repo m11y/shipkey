@@ -3,4 +3,4 @@ export {
   guessProvider,
   groupByProvider,
   isSecretKey,
-} from "@shipkey/core";
+} from "../../packages/core/src/providers/registry";

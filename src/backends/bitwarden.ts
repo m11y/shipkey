@@ -1,1 +1,1 @@
-export { BitwardenBackend } from "@shipkey/core";
+export { BitwardenBackend } from "../../packages/core/src/backends/bitwarden";

@@ -1,1 +1,4 @@
-export type { ProviderDefinition, MatchedProvider } from "@shipkey/core";
+export type {
+  ProviderDefinition,
+  MatchedProvider,
+} from "../../packages/core/src/providers/types";

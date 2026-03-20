@@ -1,7 +1,7 @@
-export type { ProviderDefinition } from "@shipkey/core";
+export type { ProviderDefinition } from "../../packages/core/src/providers/types";
 export {
   PROVIDERS,
   guessProvider,
   groupByProvider,
   isSecretKey,
-} from "@shipkey/core";
+} from "../../packages/core/src/providers/registry";

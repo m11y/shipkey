@@ -2,4 +2,4 @@ export type {
   SecretRef,
   SecretEntry,
   SecretBackend,
-} from "@shipkey/core";
+} from "../../packages/core/src/backends/types";

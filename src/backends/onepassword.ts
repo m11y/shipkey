@@ -1,1 +1,1 @@
-export { OnePasswordBackend } from "@shipkey/core";
+export { OnePasswordBackend } from "../../packages/core/src/backends/onepassword";

@@ -1,1 +1,1 @@
-export { getBackend, listBackends } from "@shipkey/core";
+export { getBackend, listBackends } from "../../packages/core/src/backends/index";
