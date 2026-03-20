@@ -7,6 +7,8 @@ async function exec(args: string[]): Promise<string> {
 
 /** Bitwarden custom field types */
 const FIELD_TYPE_HIDDEN = 1;
+const ITEM_NAME_SEPARATOR = "__";
+const FIELD_NAME_SEPARATOR = ".";
 
 interface BwCustomField {
   name: string;
@@ -31,31 +33,45 @@ interface BwFolder {
 export class BitwardenBackend implements SecretBackend {
   readonly name = "Bitwarden";
 
-  private sectionName(project: string, env: string): string {
-    return `${project}-${env}`;
+  buildItemName(ref: SecretRef): string {
+    return `${ref.project}${ITEM_NAME_SEPARATOR}${ref.env}`;
   }
 
-  /** Encode a field name for storage as a custom field: "project-env.FIELD_NAME" */
-  buildFieldName(ref: SecretRef): string {
-    const section = this.sectionName(ref.project, ref.env);
-    return `${section}.${ref.field}`;
-  }
+  /** Parse an item title like "project__env" back into project and env */
+  static parseItemName(
+    itemName: string,
+  ): { project: string; env: string } | null {
+    const separatorIndex = itemName.lastIndexOf(ITEM_NAME_SEPARATOR);
+    if (separatorIndex === -1) return null;
 
-  /** Parse a custom field name back into project, env, field */
-  static parseFieldName(
-    fieldName: string,
-  ): { project: string; env: string; field: string } | null {
-    const dotIndex = fieldName.indexOf(".");
-    if (dotIndex === -1) return null;
-
-    const section = fieldName.slice(0, dotIndex);
-    const field = fieldName.slice(dotIndex + 1);
-    const dashIndex = section.lastIndexOf("-");
-    if (dashIndex === -1) return null;
+    const project = itemName.slice(0, separatorIndex);
+    const env = itemName.slice(separatorIndex + ITEM_NAME_SEPARATOR.length);
+    if (!project || !env) return null;
 
     return {
-      project: section.slice(0, dashIndex),
-      env: section.slice(dashIndex + 1),
+      project,
+      env,
+    };
+  }
+
+  /** Encode a field name for storage as a custom field: "provider.FIELD_NAME" */
+  buildFieldName(ref: SecretRef): string {
+    return `${ref.provider}${FIELD_NAME_SEPARATOR}${ref.field}`;
+  }
+
+  /** Parse a custom field name back into provider and field */
+  static parseFieldName(
+    fieldName: string,
+  ): { provider: string; field: string } | null {
+    const dotIndex = fieldName.lastIndexOf(FIELD_NAME_SEPARATOR);
+    if (dotIndex === -1) return null;
+
+    const provider = fieldName.slice(0, dotIndex);
+    const field = fieldName.slice(dotIndex + FIELD_NAME_SEPARATOR.length);
+    if (!provider || !field) return null;
+
+    return {
+      provider,
       field,
     };
   }
@@ -126,7 +142,7 @@ export class BitwardenBackend implements SecretBackend {
   }
 
   private async findItem(
-    provider: string,
+    itemName: string,
     folderId: string,
   ): Promise<BwItem | null> {
     try {
@@ -136,10 +152,10 @@ export class BitwardenBackend implements SecretBackend {
         "--folderid",
         folderId,
         "--search",
-        provider,
+        itemName,
       ]);
       const items: BwItem[] = JSON.parse(raw);
-      return items.find((i) => i.name === provider) || null;
+      return items.find((i) => i.name === itemName) || null;
     } catch {
       return null;
     }
@@ -149,10 +165,11 @@ export class BitwardenBackend implements SecretBackend {
     await this.ensureUnlocked();
 
     const folderId = await this.findOrCreateFolder(ref.vault);
-    const item = await this.findItem(ref.provider, folderId);
+    const itemName = this.buildItemName(ref);
+    const item = await this.findItem(itemName, folderId);
     if (!item) {
       throw new Error(
-        `Item "${ref.provider}" not found in folder "${ref.vault}"`,
+        `Item "${itemName}" not found in folder "${ref.vault}"`,
       );
     }
 
@@ -160,7 +177,7 @@ export class BitwardenBackend implements SecretBackend {
     const field = item.fields?.find((f) => f.name === fieldName);
     if (!field) {
       throw new Error(
-        `Field "${fieldName}" not found in item "${ref.provider}"`,
+        `Field "${fieldName}" not found in item "${itemName}"`,
       );
     }
 
@@ -172,8 +189,9 @@ export class BitwardenBackend implements SecretBackend {
 
     const { ref, value } = entry;
     const folderId = await this.findOrCreateFolder(ref.vault);
+    const itemName = this.buildItemName(ref);
     const fieldName = this.buildFieldName(ref);
-    const existingItem = await this.findItem(ref.provider, folderId);
+    const existingItem = await this.findItem(itemName, folderId);
 
     if (existingItem) {
       // Update existing item — merge fields
@@ -201,7 +219,7 @@ export class BitwardenBackend implements SecretBackend {
       const template = JSON.parse(templateRaw);
       template.type = 2; // Secure Note
       template.secureNote = { type: 0 };
-      template.name = ref.provider;
+      template.name = itemName;
       template.folderId = folderId;
       template.fields = [
         {
@@ -221,7 +239,7 @@ export class BitwardenBackend implements SecretBackend {
     const folderId = await this.findFolder(ref.vault);
     if (!folderId) return;
 
-    const existingItem = await this.findItem(ref.provider, folderId);
+    const existingItem = await this.findItem(this.buildItemName(ref), folderId);
     if (!existingItem) return;
 
     const fieldName = this.buildFieldName(ref);
@@ -266,19 +284,22 @@ export class BitwardenBackend implements SecretBackend {
     const refs: SecretRef[] = [];
 
     for (const item of items) {
+      const parsedItem = BitwardenBackend.parseItemName(item.name);
+      if (!parsedItem) continue;
+
+      if (project && parsedItem.project !== project) continue;
+      if (env && parsedItem.env !== env) continue;
+
       if (!item.fields) continue;
       for (const field of item.fields) {
         const parsed = BitwardenBackend.parseFieldName(field.name);
         if (!parsed) continue;
 
-        if (project && parsed.project !== project) continue;
-        if (env && parsed.env !== env) continue;
-
         refs.push({
           vault,
-          provider: item.name,
-          project: parsed.project,
-          env: parsed.env,
+          provider: parsed.provider,
+          project: parsedItem.project,
+          env: parsedItem.env,
           field: parsed.field,
         });
       }
