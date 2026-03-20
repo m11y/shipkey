@@ -4,6 +4,9 @@ import {
   collectDesiredSecretRefs,
   collectLocalSecretValues,
   diffSecretRefs,
+  diffSecretValues,
+  formatSecretLabel,
+  resolveAddedSecretEntries,
 } from "../../src/commands/push";
 
 describe("push command logic", () => {
@@ -177,6 +180,117 @@ describe("push command logic", () => {
         },
       ],
     });
+  });
+
+  test("diffSecretValues detects local and remote value mismatches", () => {
+    const refs = [
+      {
+        vault: "shipkey",
+        provider: "OpenAI",
+        project: "myapp",
+        env: "dev",
+        field: "OPENAI_API_KEY",
+      },
+      {
+        vault: "shipkey",
+        provider: "Stripe",
+        project: "myapp",
+        env: "dev",
+        field: "STRIPE_SECRET_KEY",
+      },
+    ];
+
+    const localValues = new Map([
+      ["OPENAI_API_KEY", "sk-local"],
+      ["STRIPE_SECRET_KEY", "stripe-same"],
+    ]);
+
+    const remoteValues = new Map([
+      ["shipkey\0OpenAI\0myapp\0dev\0OPENAI_API_KEY", "sk-remote"],
+      ["shipkey\0Stripe\0myapp\0dev\0STRIPE_SECRET_KEY", "stripe-same"],
+    ]);
+
+    expect(diffSecretValues(refs, localValues, remoteValues)).toEqual([
+      {
+        ref: refs[0],
+        localValue: "sk-local",
+        remoteValue: "sk-remote",
+      },
+    ]);
+  });
+
+  test("diffSecretValues ignores refs missing local or remote values", () => {
+    const refs = [
+      {
+        vault: "shipkey",
+        provider: "OpenAI",
+        project: "myapp",
+        env: "dev",
+        field: "OPENAI_API_KEY",
+      },
+    ];
+
+    expect(
+      diffSecretValues(
+        refs,
+        new Map(),
+        new Map([["shipkey\0OpenAI\0myapp\0dev\0OPENAI_API_KEY", "sk-remote"]])
+      )
+    ).toEqual([]);
+
+    expect(
+      diffSecretValues(
+        refs,
+        new Map([["OPENAI_API_KEY", "sk-local"]]),
+        new Map()
+      )
+    ).toEqual([]);
+  });
+
+  test("resolveAddedSecretEntries separates writable and missing refs", () => {
+    const refs = [
+      {
+        vault: "shipkey",
+        provider: "OpenAI",
+        project: "myapp",
+        env: "dev",
+        field: "OPENAI_API_KEY",
+      },
+      {
+        vault: "shipkey",
+        provider: "Stripe",
+        project: "myapp",
+        env: "dev",
+        field: "STRIPE_SECRET_KEY",
+      },
+    ];
+
+    const result = resolveAddedSecretEntries(
+      refs,
+      new Map([["OPENAI_API_KEY", "sk-local"]])
+    );
+
+    expect(result).toEqual({
+      entries: [
+        {
+          ref: refs[0],
+          value: "sk-local",
+        },
+      ],
+      missing: [refs[1]],
+    });
+  });
+
+  test("formatSecretLabel renders provider and field", () => {
+    expect(
+      formatSecretLabel({
+        vault: "shipkey",
+        provider: "OpenAI",
+        project: "myapp",
+        env: "dev",
+        field: "OPENAI_API_KEY",
+      })
+    ).toBe("OpenAI.OPENAI_API_KEY");
   });
 
   test("collectLocalSecretValues ignores template files and keeps first real value", () => {
