@@ -3,3 +3,4 @@ dist/
 shipkey
 *.log
 .DS_Store
+.*.bun-build
