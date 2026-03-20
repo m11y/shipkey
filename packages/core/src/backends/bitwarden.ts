@@ -103,10 +103,8 @@ export class BitwardenBackend implements SecretBackend {
   }
 
   private async findOrCreateFolder(name: string): Promise<string> {
-    const foldersRaw = await exec(["list", "folders"]);
-    const folders: BwFolder[] = JSON.parse(foldersRaw);
-    const existing = folders.find((f) => f.name === name);
-    if (existing) return existing.id;
+    const existing = await this.findFolder(name);
+    if (existing) return existing;
 
     // Create folder via template
     const templateRaw = await exec(["get", "template", "folder"]);
@@ -118,6 +116,13 @@ export class BitwardenBackend implements SecretBackend {
     const created = await exec(["create", "folder", encodedFolder]);
     const folder: BwFolder = JSON.parse(created);
     return folder.id;
+  }
+
+  private async findFolder(name: string): Promise<string | null> {
+    const foldersRaw = await exec(["list", "folders"]);
+    const folders: BwFolder[] = JSON.parse(foldersRaw);
+    const existing = folders.find((f) => f.name === name);
+    return existing?.id ?? null;
   }
 
   private async findItem(
@@ -208,6 +213,34 @@ export class BitwardenBackend implements SecretBackend {
       const encoded = Buffer.from(JSON.stringify(template)).toString("base64");
       await exec(["create", "item", encoded]);
     }
+  }
+
+  async delete(ref: SecretRef): Promise<void> {
+    await this.ensureUnlocked();
+
+    const folderId = await this.findFolder(ref.vault);
+    if (!folderId) return;
+
+    const existingItem = await this.findItem(ref.provider, folderId);
+    if (!existingItem) return;
+
+    const fieldName = this.buildFieldName(ref);
+    const nextFields = (existingItem.fields || []).filter(
+      (f) => f.name !== fieldName,
+    );
+
+    if (nextFields.length === (existingItem.fields || []).length) {
+      return;
+    }
+
+    if (nextFields.length === 0) {
+      await exec(["delete", "item", existingItem.id]);
+      return;
+    }
+
+    existingItem.fields = nextFields;
+    const encoded = Buffer.from(JSON.stringify(existingItem)).toString("base64");
+    await exec(["edit", "item", existingItem.id, encoded]);
   }
 
   async list(

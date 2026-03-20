@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { diffDefaults } from "../../src/commands/scan";
+import { diffDefaults, diffProviders } from "../../src/commands/scan";
 
 describe("diffDefaults", () => {
   test("returns null when no changes", () => {
@@ -68,6 +68,101 @@ describe("diffDefaults", () => {
 
   test("handles both undefined", () => {
     const result = diffDefaults(undefined, undefined);
+    expect(result).toBeNull();
+  });
+});
+
+describe("diffProviders", () => {
+  test("detects added fields in the same provider", () => {
+    const result = diffProviders(
+      {
+        OpenAI: { fields: ["OPENAI_API_KEY"] },
+      },
+      {
+        OpenAI: { fields: ["OPENAI_API_KEY", "OPENAI_ORG_ID"] },
+      }
+    );
+    expect(result).not.toBeNull();
+    expect(result!.added).toEqual([["OpenAI", "OPENAI_ORG_ID"]]);
+    expect(result!.removed).toEqual([]);
+  });
+
+  test("detects removed fields in the same provider", () => {
+    const result = diffProviders(
+      {
+        OpenAI: { fields: ["OPENAI_API_KEY", "OPENAI_ORG_ID"] },
+      },
+      {
+        OpenAI: { fields: ["OPENAI_API_KEY"] },
+      }
+    );
+    expect(result).not.toBeNull();
+    expect(result!.added).toEqual([]);
+    expect(result!.removed).toEqual([["OpenAI", "OPENAI_ORG_ID"]]);
+  });
+
+  test("detects removed fields when a provider disappears entirely", () => {
+    const result = diffProviders(
+      {
+        OpenAI: { fields: ["OPENAI_API_KEY"] },
+        Anthropic: { fields: ["ANTHROPIC_API_KEY"] },
+      },
+      {
+        OpenAI: { fields: ["OPENAI_API_KEY"] },
+      }
+    );
+    expect(result).not.toBeNull();
+    expect(result!.added).toEqual([]);
+    expect(result!.removed).toEqual([["Anthropic", "ANTHROPIC_API_KEY"]]);
+  });
+
+  test("detects additions and removals together", () => {
+    const result = diffProviders(
+      {
+        OpenAI: { fields: ["OPENAI_API_KEY"] },
+        Anthropic: { fields: ["ANTHROPIC_API_KEY"] },
+      },
+      {
+        OpenAI: { fields: ["OPENAI_API_KEY", "OPENAI_ORG_ID"] },
+        Stripe: { fields: ["STRIPE_SECRET_KEY"] },
+      }
+    );
+    expect(result).not.toBeNull();
+    expect(result!.added).toEqual([
+      ["OpenAI", "OPENAI_ORG_ID"],
+      ["Stripe", "STRIPE_SECRET_KEY"],
+    ]);
+    expect(result!.removed).toEqual([["Anthropic", "ANTHROPIC_API_KEY"]]);
+  });
+
+  test("handles undefined values", () => {
+    expect(
+      diffProviders(
+        undefined,
+        {
+          OpenAI: { fields: ["OPENAI_API_KEY"] },
+        }
+      )
+    ).toEqual({
+      added: [["OpenAI", "OPENAI_API_KEY"]],
+      removed: [],
+    });
+
+    expect(
+      diffProviders(
+        {
+          OpenAI: { fields: ["OPENAI_API_KEY"] },
+        },
+        undefined
+      )
+    ).toEqual({
+      added: [],
+      removed: [["OpenAI", "OPENAI_API_KEY"]],
+    });
+  });
+
+  test("returns null when both are undefined", () => {
+    const result = diffProviders(undefined, undefined);
     expect(result).toBeNull();
   });
 });

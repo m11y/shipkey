@@ -42,6 +42,13 @@ interface DefaultsDiff {
   removed: string[];           // keys in config but no longer in .env
 }
 
+type ProviderField = [string, string]; // [provider, field]
+
+interface ProvidersDiff {
+  added: ProviderField[];
+  removed: ProviderField[];
+}
+
 export function diffDefaults(
   existing: Record<string, string> | undefined,
   scanned: Record<string, string> | undefined
@@ -68,6 +75,36 @@ export function diffDefaults(
   return hasChanges ? diff : null;
 }
 
+export function diffProviders(
+  existing: ShipkeyConfig["providers"] | undefined,
+  scanned: ShipkeyConfig["providers"] | undefined
+): ProvidersDiff | null {
+  const added: ProviderField[] = [];
+  const removed: ProviderField[] = [];
+  const existingProviders = existing ?? {};
+  const scannedProviders = scanned ?? {};
+
+  for (const [providerName, provider] of Object.entries(scannedProviders)) {
+    const existingFields = new Set(existingProviders[providerName]?.fields ?? []);
+    for (const field of provider.fields) {
+      if (!existingFields.has(field)) {
+        added.push([providerName, field]);
+      }
+    }
+  }
+
+  for (const [providerName, provider] of Object.entries(existingProviders)) {
+    const scannedFields = new Set(scannedProviders[providerName]?.fields ?? []);
+    for (const field of provider.fields) {
+      if (!scannedFields.has(field)) {
+        removed.push([providerName, field]);
+      }
+    }
+  }
+
+  return added.length > 0 || removed.length > 0 ? { added, removed } : null;
+}
+
 function printDefaultsDiff(diff: DefaultsDiff): void {
   console.log(`\n  ${BOLD}Defaults diff:${RESET}`);
   for (const [key, val] of diff.added) {
@@ -79,6 +116,16 @@ function printDefaultsDiff(diff: DefaultsDiff): void {
   }
   for (const key of diff.removed) {
     console.log(`  ${RED}- ${key}${DIM} (removed from .env)${RESET}`);
+  }
+}
+
+function printProvidersDiff(diff: ProvidersDiff): void {
+  console.log(`\n  ${BOLD}Secrets diff:${RESET}`);
+  for (const [providerName, field] of diff.added) {
+    console.log(`  ${GREEN}+ ${providerName}.${field}${RESET}`);
+  }
+  for (const [providerName, field] of diff.removed) {
+    console.log(`  ${RED}- ${providerName}.${field}${DIM} (removed from scan)${RESET}`);
   }
 }
 
@@ -126,6 +173,13 @@ export const scanCommand = new Command("scan")
       const diff = diffDefaults(existingConfig?.defaults, result.config.defaults);
       if (diff) {
         printDefaultsDiff(diff);
+      }
+      const providersDiff = diffProviders(
+        existingConfig?.providers,
+        result.config.providers
+      );
+      if (providersDiff) {
+        printProvidersDiff(providersDiff);
       }
 
       if (!opts.dryRun) {

@@ -5,6 +5,10 @@ export class MockBackend implements SecretBackend {
   readonly calls: { method: string; args: any[] }[] = [];
   private store = new Map<string, string>();
 
+  private refKey(ref: SecretRef): string {
+    return `${ref.vault}/${ref.provider}/${ref.project}-${ref.env}/${ref.field}`;
+  }
+
   async isAvailable() {
     return true;
   }
@@ -15,7 +19,7 @@ export class MockBackend implements SecretBackend {
 
   async read(ref: SecretRef) {
     this.calls.push({ method: "read", args: [ref] });
-    const key = `${ref.provider}/${ref.project}-${ref.env}/${ref.field}`;
+    const key = this.refKey(ref);
     const value = this.store.get(key);
     if (value === undefined) {
       throw new Error(`Not found: ${key}`);
@@ -25,25 +29,31 @@ export class MockBackend implements SecretBackend {
 
   async write(entry: SecretEntry) {
     this.calls.push({ method: "write", args: [entry] });
-    const key = `${entry.ref.provider}/${entry.ref.project}-${entry.ref.env}/${entry.ref.field}`;
+    const key = this.refKey(entry.ref);
     this.store.set(key, entry.value);
   }
 
-  async list(project?: string, env?: string) {
-    this.calls.push({ method: "list", args: [project, env] });
+  async delete(ref: SecretRef) {
+    this.calls.push({ method: "delete", args: [ref] });
+    this.store.delete(this.refKey(ref));
+  }
+
+  async list(project?: string, env?: string, vault?: string) {
+    this.calls.push({ method: "list", args: [project, env, vault] });
     const refs: SecretRef[] = [];
     for (const [key] of this.store) {
-      // Parse "Provider/project-env/field"
+      // Parse "vault/Provider/project-env/field"
       const parts = key.split("/");
-      if (parts.length !== 3) continue;
-      const [provider, section, field] = parts;
+      if (parts.length !== 4) continue;
+      const [storedVault, provider, section, field] = parts;
       const dashIndex = section.lastIndexOf("-");
       if (dashIndex === -1) continue;
       const proj = section.slice(0, dashIndex);
       const e = section.slice(dashIndex + 1);
+      if (vault && storedVault !== vault) continue;
       if (project && proj !== project) continue;
       if (env && e !== env) continue;
-      refs.push({ vault: "mock", provider, project: proj, env: e, field });
+      refs.push({ vault: storedVault, provider, project: proj, env: e, field });
     }
     return refs;
   }
@@ -53,13 +63,22 @@ export class MockBackend implements SecretBackend {
   }
 
   seed(
-    provider: string,
-    project: string,
-    env: string,
-    field: string,
-    value: string
+    vaultOrProvider: string,
+    providerOrProject: string,
+    projectOrEnv: string,
+    envOrField: string,
+    fieldOrValue: string,
+    maybeValue?: string
   ) {
-    this.store.set(`${provider}/${project}-${env}/${field}`, value);
+    const hasExplicitVault = maybeValue !== undefined;
+    const vault = hasExplicitVault ? vaultOrProvider : "shipkey";
+    const provider = hasExplicitVault ? providerOrProject : vaultOrProvider;
+    const project = hasExplicitVault ? projectOrEnv : providerOrProject;
+    const env = hasExplicitVault ? envOrField : projectOrEnv;
+    const field = hasExplicitVault ? fieldOrValue : envOrField;
+    const value = hasExplicitVault ? maybeValue : fieldOrValue;
+
+    this.store.set(`${vault}/${provider}/${project}-${env}/${field}`, value);
   }
 
   reset() {
