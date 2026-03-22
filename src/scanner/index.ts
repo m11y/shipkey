@@ -28,12 +28,16 @@ function isTemplate(filename: string): boolean {
   return filename.includes(".example") || filename.includes(".template");
 }
 
+function sortDirEntries<T extends { name: string }>(entries: T[]): T[] {
+  return [...entries].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 async function walkDir(
   dir: string,
   rootDir: string,
   files: { path: string; fullPath: string }[]
 ): Promise<void> {
-  const entries = await readdir(dir, { withFileTypes: true });
+  const entries = sortDirEntries(await readdir(dir, { withFileTypes: true }));
 
   for (const entry of entries) {
     if (entry.isDirectory()) {
@@ -96,7 +100,7 @@ export async function scan(projectRoot: string): Promise<ScanResult> {
 
 // Scan only immediate .env files in a single directory (no recursion)
 export async function scanSingleDir(dir: string): Promise<ScanResult> {
-  const entries = await readdir(dir, { withFileTypes: true });
+  const entries = sortDirEntries(await readdir(dir, { withFileTypes: true }));
   const foundFiles: { path: string; fullPath: string }[] = [];
 
   for (const entry of entries) {
@@ -144,7 +148,7 @@ export async function walkDirsWithEnv(root: string): Promise<string[]> {
 }
 
 async function collectEnvDirs(dir: string, result: string[]): Promise<void> {
-  const entries = await readdir(dir, { withFileTypes: true });
+  const entries = sortDirEntries(await readdir(dir, { withFileTypes: true }));
   let hasEnvFile = false;
 
   for (const entry of entries) {
@@ -168,7 +172,7 @@ export async function walkDirsWithShipkey(root: string): Promise<string[]> {
 }
 
 async function collectShipkeyDirs(dir: string, result: string[]): Promise<void> {
-  const entries = await readdir(dir, { withFileTypes: true });
+  const entries = sortDirEntries(await readdir(dir, { withFileTypes: true }));
   let hasShipkey = false;
 
   for (const entry of entries) {

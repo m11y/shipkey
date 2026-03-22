@@ -61,16 +61,16 @@ bunx shipkey pull
 ## 仕組み
 
 ```
-shipkey scan     →  .env ファイル、ワークフロー、wrangler 設定を検出
+shipkey scan     →  カレントディレクトリ内のファイルを検出
                     providers と権限推奨を含む shipkey.json を生成
 
 shipkey setup    →  ブラウザウィザードで API キーを入力
                     パスワードマネージャー + ローカル .env.local/.dev.vars に保存
 
-shipkey pull     →  パスワードマネージャーからすべてのキーをローカルファイルに復元
+shipkey pull     →  カレントディレクトリ用のキーをローカルファイルに復元
                     新しいマシンが数秒で準備完了
 
-shipkey sync     →  GitHub Actions、Cloudflare Workers にシークレットを送信
+shipkey sync     →  カレントディレクトリ用のシークレットを外部サービスに送信
                     1コマンドですべてのプラットフォームに
 ```
 
@@ -112,12 +112,14 @@ shipkey setup --no-open        # ブラウザを自動で開かない
 
 ### `shipkey scan [dir]`
 
-プロジェクトをスキャンして `shipkey.json` を生成。
+カレントディレクトリをスキャンして `shipkey.json` を生成。
 
 ```bash
-shipkey scan                   # スキャンして設定を書き出し
+shipkey scan                   # カレントディレクトリをスキャンして設定を書き出し
 shipkey scan --dry-run         # プレビューのみ（書き込みなし）
 ```
+
+`shipkey scan` はまず差分を表示し、変更がある場合だけ確認後に `shipkey.json` を書き込みます。
 
 検出対象：
 - `.env`、`.env.local`、`.env.example`、`.dev.vars`、`.envrc`
@@ -129,7 +131,7 @@ shipkey scan --dry-run         # プレビューのみ（書き込みなし）
 
 ### `shipkey push [dir]`
 
-ローカルの環境変数をパスワードマネージャーにプッシュ。
+カレントディレクトリの環境変数をパスワードマネージャーにプッシュ。
 
 ```bash
 shipkey push                   # dev 環境をプッシュ
@@ -139,11 +141,12 @@ shipkey push --vault myteam    # カスタム保管庫
 
 ### `shipkey pull [dir]`
 
-パスワードマネージャーからシークレットを取得してローカル env ファイルを生成。
+カレントディレクトリ用のシークレットを取得してローカル env ファイルを生成。
 
 ```bash
 shipkey pull                   # dev 環境を取得
 shipkey pull -e prod           # prod 環境を取得
+shipkey pull --dry-run         # 差分だけ確認してファイルは書き込まない
 shipkey pull --no-envrc        # .envrc の生成をスキップ
 shipkey pull --no-dev-vars     # .dev.vars の生成をスキップ
 ```
@@ -154,7 +157,7 @@ shipkey pull --no-dev-vars     # .dev.vars の生成をスキップ
 
 ### `shipkey sync [target] [dir]`
 
-シークレットを外部プラットフォームに同期。
+カレントディレクトリ用のシークレットを外部プラットフォームに同期。
 
 ```bash
 shipkey sync                   # すべてのターゲットに同期

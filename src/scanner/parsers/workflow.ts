@@ -26,7 +26,7 @@ export async function scanWorkflows(
     return { secrets: [], files: [], wranglerCommands: [] };
   }
 
-  for (const entry of entries) {
+  for (const entry of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
     if (!entry.isFile()) continue;
     if (!entry.name.endsWith(".yml") && !entry.name.endsWith(".yaml")) continue;
 
@@ -59,7 +59,11 @@ export async function scanWorkflows(
     }
   }
 
-  return { secrets: [...secrets], files, wranglerCommands };
+  return {
+    secrets: [...secrets].sort((a, b) => a.localeCompare(b)),
+    files,
+    wranglerCommands,
+  };
 }
 
 const SSH_RE = /git@github\.com:(.+?)\.git$/;

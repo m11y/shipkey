@@ -1,8 +1,8 @@
 import { Command } from "commander";
-import { resolve, join, relative } from "path";
+import { resolve, join } from "path";
 import { writeFile } from "fs/promises";
 import { createInterface } from "readline";
-import { walkAndScan, printScanSummary } from "../scanner/project";
+import { scanProject, printScanSummary } from "../scanner/project";
 import { loadConfig, type ShipkeyConfig } from "../config";
 
 // ANSI colors
@@ -47,6 +47,17 @@ type ProviderField = [string, string]; // [provider, field]
 interface ProvidersDiff {
   added: ProviderField[];
   removed: ProviderField[];
+}
+
+type ConfigMetaField = "project" | "vault" | "env" | "backend";
+
+interface ConfigMetaDiff {
+  changed: [ConfigMetaField, string, string][];
+}
+
+interface TargetsDiff {
+  added: string[];
+  removed: string[];
 }
 
 export function diffDefaults(
@@ -105,6 +116,70 @@ export function diffProviders(
   return added.length > 0 || removed.length > 0 ? { added, removed } : null;
 }
 
+function printableValue(value: string | undefined): string {
+  return value ?? "(unset)";
+}
+
+export function diffConfigMeta(
+  existing: ShipkeyConfig | undefined,
+  scanned: ShipkeyConfig | undefined
+): ConfigMetaDiff | null {
+  const changed: [ConfigMetaField, string, string][] = [];
+  const fields: ConfigMetaField[] = ["project", "vault", "env", "backend"];
+
+  for (const field of fields) {
+    const oldValue = existing?.[field];
+    const newValue = scanned?.[field];
+    if (oldValue !== newValue) {
+      changed.push([
+        field,
+        printableValue(oldValue),
+        printableValue(newValue),
+      ]);
+    }
+  }
+
+  return changed.length > 0 ? { changed } : null;
+}
+
+function flattenTargets(
+  targets: ShipkeyConfig["targets"] | undefined
+): string[] {
+  if (!targets) return [];
+
+  const entries: string[] = [];
+  for (const [targetName, targetConfig] of Object.entries(targets)) {
+    for (const [destination, secretRefs] of Object.entries(targetConfig)) {
+      if (Array.isArray(secretRefs)) {
+        for (const secret of [...secretRefs].sort()) {
+          entries.push(`${targetName}/${destination}:${secret}`);
+        }
+        continue;
+      }
+
+      for (const [name, ref] of Object.entries(secretRefs).sort(([a], [b]) =>
+        a.localeCompare(b)
+      )) {
+        entries.push(`${targetName}/${destination}:${name}=${ref}`);
+      }
+    }
+  }
+
+  return entries.sort();
+}
+
+export function diffTargets(
+  existing: ShipkeyConfig["targets"] | undefined,
+  scanned: ShipkeyConfig["targets"] | undefined
+): TargetsDiff | null {
+  const oldTargets = new Set(flattenTargets(existing));
+  const newTargets = new Set(flattenTargets(scanned));
+  const added = [...newTargets].filter((entry) => !oldTargets.has(entry));
+  const removed = [...oldTargets].filter((entry) => !newTargets.has(entry));
+
+  return added.length > 0 || removed.length > 0 ? { added, removed } : null;
+}
+
 function printDefaultsDiff(diff: DefaultsDiff): void {
   console.log(`\n  ${BOLD}Defaults diff:${RESET}`);
   for (const [key, val] of diff.added) {
@@ -129,81 +204,103 @@ function printProvidersDiff(diff: ProvidersDiff): void {
   }
 }
 
+function printConfigMetaDiff(diff: ConfigMetaDiff): void {
+  console.log(`\n  ${BOLD}Config diff:${RESET}`);
+  for (const [field, oldValue, newValue] of diff.changed) {
+    console.log(`  ${RED}- ${field}=${oldValue}${RESET}`);
+    console.log(`  ${GREEN}+ ${field}=${newValue}${RESET}`);
+  }
+}
+
+function printTargetsDiff(diff: TargetsDiff): void {
+  console.log(`\n  ${BOLD}Targets diff:${RESET}`);
+  for (const entry of diff.added) {
+    console.log(`  ${GREEN}+ ${entry}${RESET}`);
+  }
+  for (const entry of diff.removed) {
+    console.log(`  ${RED}- ${entry}${DIM} (removed from scan)${RESET}`);
+  }
+}
+
 export const scanCommand = new Command("scan")
-  .description("Scan project and generate shipkey.json in each directory with .env files")
+  .description("Scan the current directory and generate shipkey.json")
   .option("--dry-run", "print results without writing shipkey.json")
   .argument("[dir]", "project directory", ".")
   .action(async (dir: string, opts: { dryRun?: boolean }) => {
     const projectRoot = resolve(dir);
     console.log(`Scanning ${projectRoot}...\n`);
 
-    const found = await walkAndScan(projectRoot);
+    const result = await scanProject(projectRoot, projectRoot);
 
-    if (found.length === 0) {
+    if (result.stats.envFiles === 0) {
       console.log("  No .env files found.");
       return;
     }
 
-    // Pre-load existing configs
-    const existingConfigs = new Map<string, ShipkeyConfig | undefined>();
-    for (const { dir: d } of found) {
-      try {
-        existingConfigs.set(d, await loadConfig(d));
-      } catch {
-        existingConfigs.set(d, undefined);
-      }
+    let existingConfig: ShipkeyConfig | undefined;
+    try {
+      existingConfig = await loadConfig(projectRoot);
+    } catch {
+      existingConfig = undefined;
     }
 
-    // Prompt once if any directory doesn't have a backend configured yet
     let chosenBackend: string | undefined;
-    const anyNeedsBackend = [...existingConfigs.values()].some((c) => !c?.backend);
-    if (anyNeedsBackend && !opts.dryRun) {
+    if (!existingConfig?.backend && !opts.dryRun) {
       const choice = await promptBackend();
       chosenBackend = choice === "2" ? "bitwarden" : "1password";
     }
 
-    for (const { dir: d, result } of found) {
-      const relDir = relative(projectRoot, d) || ".";
-      console.log(`\n  [${relDir}]`);
-      printScanSummary(result);
+    result.config.backend = existingConfig?.backend ?? chosenBackend;
 
-      const existingConfig = existingConfigs.get(d);
+    console.log(`\n  [.]`);
+    printScanSummary(result);
 
-      // Always show diff (dry-run or not)
-      const diff = diffDefaults(existingConfig?.defaults, result.config.defaults);
-      if (diff) {
-        printDefaultsDiff(diff);
-      }
-      const providersDiff = diffProviders(
-        existingConfig?.providers,
-        result.config.providers
+    const diff = diffDefaults(existingConfig?.defaults, result.config.defaults);
+    if (diff) {
+      printDefaultsDiff(diff);
+    }
+    const providersDiff = diffProviders(
+      existingConfig?.providers,
+      result.config.providers
+    );
+    if (providersDiff) {
+      printProvidersDiff(providersDiff);
+    }
+    const configMetaDiff = diffConfigMeta(existingConfig, result.config);
+    if (configMetaDiff) {
+      printConfigMetaDiff(configMetaDiff);
+    }
+    const targetsDiff = diffTargets(existingConfig?.targets, result.config.targets);
+    if (targetsDiff) {
+      printTargetsDiff(targetsDiff);
+    }
+
+    const hasChanges =
+      !existingConfig ||
+      Boolean(diff || providersDiff || configMetaDiff || targetsDiff);
+
+    if (!hasChanges) {
+      console.log("\n  No changes detected.");
+      return;
+    }
+
+    if (!opts.dryRun) {
+      const accept = await promptYesNo(
+        `\n  ${YELLOW}Write updated shipkey.json? [Y/n]:${RESET} `
       );
-      if (providersDiff) {
-        printProvidersDiff(providersDiff);
+      if (!accept) {
+        console.log("\n  Skipped writing shipkey.json.");
+        return;
       }
 
-      if (!opts.dryRun) {
-        result.config.backend = existingConfig?.backend ?? chosenBackend ?? "1password";
-
-        // Prompt to accept defaults changes
-        if (diff) {
-          const accept = await promptYesNo(
-            `\n  ${YELLOW}Update defaults in shipkey.json? [Y/n]:${RESET} `
-          );
-          if (!accept) {
-            result.config.defaults = existingConfig?.defaults;
-          }
-        }
-
-        const outPath = join(d, "shipkey.json");
-        await writeFile(outPath, JSON.stringify(result.config, null, 2) + "\n");
-        console.log(`  ✓ Written ${relative(projectRoot, outPath) || "shipkey.json"}`);
-      }
+      const outPath = join(projectRoot, "shipkey.json");
+      await writeFile(outPath, JSON.stringify(result.config, null, 2) + "\n");
+      console.log("  ✓ Written shipkey.json");
     }
 
     if (opts.dryRun) {
-      console.log(`\n  (dry-run: no shipkey.json files written)`);
+      console.log("\n  (dry-run: no shipkey.json written)");
     } else {
-      console.log(`\n  Done. ${found.length} shipkey.json file(s) written.`);
+      console.log("\n  Done. 1 shipkey.json file written.");
     }
   });

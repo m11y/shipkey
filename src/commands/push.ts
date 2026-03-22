@@ -1,12 +1,13 @@
 import { Command } from "commander";
-import { scanSingleDir, walkDirsWithShipkey } from "../scanner";
+import { scanSingleDir } from "../scanner";
 import { getBackend } from "../backends";
 import { loadConfig } from "../config";
-import { resolve, relative } from "path";
+import { resolve } from "path";
 import { createInterface } from "readline";
 import type { ShipkeyConfig } from "../config";
 import type { SecretRef } from "../backends/types";
 import type { ScanResult } from "../scanner/types";
+import { resolveProjectDir } from "./project-scope";
 
 const RED = "\x1b[31m";
 const GREEN = "\x1b[32m";
@@ -154,7 +155,7 @@ export function formatSecretLabel(ref: SecretRef): string {
 }
 
 export const pushCommand = new Command("push")
-  .description("Push env values from local files to your password manager")
+  .description("Push env values from the current directory to your password manager")
   .option("-e, --env <env>", "environment (overrides shipkey.json)")
   .option("--vault <vault>", "Vault or folder name", "shipkey")
   .option("--dry-run", "show changes without writing or deleting secrets")
@@ -162,206 +163,202 @@ export const pushCommand = new Command("push")
   .action(async (dir: string, opts) => {
     const projectRoot = resolve(dir);
     const isDryRun = Boolean(opts.dryRun);
-
-    const shipkeyDirs = await walkDirsWithShipkey(projectRoot);
-
-    if (shipkeyDirs.length === 0) {
+    const projectDir = await resolveProjectDir(projectRoot);
+    if (!projectDir) {
       console.error(
         "  No shipkey.json found. Run `shipkey scan` first."
       );
       process.exit(1);
     }
 
-    for (const d of shipkeyDirs) {
-      const relDir = relative(projectRoot, d) || ".";
-      console.log(`\n  [${relDir}]`);
+    const d = projectDir;
+    console.log(`\n  [.]`);
 
-      let config;
+    let config;
+    try {
+      config = await loadConfig(d);
+    } catch {
+      console.error("  ✗ Could not read shipkey.json in .");
+      process.exit(1);
+    }
+
+    const backendName = config.backend ?? "1password";
+    if (backendName !== "bitwarden") {
+      console.error(
+        "  ✗ Deletion-aware push currently only supports the Bitwarden backend."
+      );
+      process.exit(1);
+    }
+
+    const backend = getBackend(config.backend);
+    const env = opts.env ?? config.env ?? "dev";
+    const vault = opts.vault ?? config.vault ?? "shipkey";
+    if (!(await backend.isAvailable())) {
+      console.error(
+        `  ✗ ${backend.name} CLI not available. Run 'shipkey setup' for installation instructions.`
+      );
+      process.exit(1);
+    }
+
+    const desiredRefs = collectDesiredSecretRefs(config, env, vault);
+    const existingRefs = await backend.list(config.project, env, vault);
+    const diff = diffSecretRefs(desiredRefs, existingRefs);
+    const existingRefKeys = new Set(existingRefs.map(refKey));
+    const sharedRefs = desiredRefs.filter((ref) => existingRefKeys.has(refKey(ref)));
+
+    if (!diff && sharedRefs.length === 0) {
+      console.log("  No secret changes to push.");
+      return;
+    }
+
+    const result = await scanSingleDir(d);
+    const localValues = collectLocalSecretValues(result);
+
+    const remoteValues = new Map<string, string>();
+    for (const ref of sharedRefs) {
+      if (!localValues.has(ref.field)) continue;
       try {
-        config = await loadConfig(d);
-      } catch {
-        console.error(`  ✗ Could not read shipkey.json in ${relDir}`);
-        continue;
-      }
-
-      const backendName = config.backend ?? "1password";
-      if (backendName !== "bitwarden") {
+        remoteValues.set(refKey(ref), await backend.read(ref));
+      } catch (err) {
         console.error(
-          "  ✗ Deletion-aware push currently only supports the Bitwarden backend."
-        );
-        continue;
-      }
-
-      const backend = getBackend(config.backend);
-      const env = opts.env ?? config.env ?? "dev";
-      const vault = opts.vault ?? config.vault ?? "shipkey";
-      if (!(await backend.isAvailable())) {
-        console.error(
-          `  ✗ ${backend.name} CLI not available. Run 'shipkey setup' for installation instructions.`
-        );
-        continue;
-      }
-
-      const desiredRefs = collectDesiredSecretRefs(config, env, vault);
-      const existingRefs = await backend.list(config.project, env, vault);
-      const diff = diffSecretRefs(desiredRefs, existingRefs);
-      const existingRefKeys = new Set(existingRefs.map(refKey));
-      const sharedRefs = desiredRefs.filter((ref) => existingRefKeys.has(refKey(ref)));
-
-      if (!diff && sharedRefs.length === 0) {
-        console.log("  No secret changes to push.");
-        continue;
-      }
-
-      const result = await scanSingleDir(d);
-      const localValues = collectLocalSecretValues(result);
-
-      const remoteValues = new Map<string, string>();
-      for (const ref of sharedRefs) {
-        if (!localValues.has(ref.field)) continue;
-        try {
-          remoteValues.set(refKey(ref), await backend.read(ref));
-        } catch (err) {
-          console.error(
-            `  ✗ Could not read ${ref.provider}.${ref.field} from ${backend.name} — ${
-              err instanceof Error ? err.message : err
-            }`
-          );
-        }
-      }
-
-      const changedValues = diffSecretValues(sharedRefs, localValues, remoteValues);
-
-      if (!diff && changedValues.length === 0) {
-        console.log("  No secret changes to push.");
-        continue;
-      }
-
-      if (diff?.added.length) {
-        console.log(`  ${BOLD}Added secrets (${diff.added.length}):${RESET}`);
-        for (const ref of diff.added) {
-          console.log(`    ${GREEN}+ ${formatSecretLabel(ref)}${RESET}`);
-        }
-      }
-
-      if (changedValues.length > 0) {
-        console.log(`  ${BOLD}Changed secrets (${changedValues.length}):${RESET}`);
-        for (const entry of changedValues) {
-          console.log(`    ${YELLOW}~ ${formatSecretLabel(entry.ref)}${RESET}`);
-        }
-      }
-
-      if (diff?.removed.length) {
-        console.log(`  ${BOLD}Removed secrets (${diff.removed.length}):${RESET}`);
-        for (const ref of diff.removed) {
-          console.log(`    ${RED}- ${formatSecretLabel(ref)}${RESET}`);
-        }
-      }
-
-      const addedResolution = diff?.added.length
-        ? resolveAddedSecretEntries(diff.added, localValues)
-        : { entries: [], missing: [] as SecretRef[] };
-
-      for (const ref of addedResolution.missing) {
-        console.error(
-          `  ${RED}✗ Missing local value for ${formatSecretLabel(ref)}; skipped.${RESET}`
+          `  ✗ Could not read ${ref.provider}.${ref.field} from ${backend.name} — ${
+            err instanceof Error ? err.message : err
+          }`
         );
       }
+    }
 
-      if (isDryRun) {
-        if (addedResolution.entries.length > 0) {
-          console.log(
-            `  ${DIM}Would write ${addedResolution.entries.length} new secret(s) to ${backend.name}.${RESET}`
-          );
-        }
-        if (changedValues.length > 0) {
-          console.log(
-            `  ${DIM}Would prompt to overwrite ${changedValues.length} existing secret(s) in ${backend.name}.${RESET}`
-          );
-        }
-        if (diff?.removed.length) {
-          console.log(
-            `  ${DIM}Would prompt to delete ${diff.removed.length} secret(s) from ${backend.name}.${RESET}`
-          );
-        }
-        console.log(`  ${DIM}(dry-run: no secrets were changed)${RESET}`);
-        continue;
+    const changedValues = diffSecretValues(sharedRefs, localValues, remoteValues);
+
+    if (!diff && changedValues.length === 0) {
+      console.log("  No secret changes to push.");
+      return;
+    }
+
+    if (diff?.added.length) {
+      console.log(`  ${BOLD}Added secrets (${diff.added.length}):${RESET}`);
+      for (const ref of diff.added) {
+        console.log(`    ${GREEN}+ ${formatSecretLabel(ref)}${RESET}`);
       }
+    }
 
+    if (changedValues.length > 0) {
+      console.log(`  ${BOLD}Changed secrets (${changedValues.length}):${RESET}`);
+      for (const entry of changedValues) {
+        console.log(`    ${YELLOW}~ ${formatSecretLabel(entry.ref)}${RESET}`);
+      }
+    }
+
+    if (diff?.removed.length) {
+      console.log(`  ${BOLD}Removed secrets (${diff.removed.length}):${RESET}`);
+      for (const ref of diff.removed) {
+        console.log(`    ${RED}- ${formatSecretLabel(ref)}${RESET}`);
+      }
+    }
+
+    const addedResolution = diff?.added.length
+      ? resolveAddedSecretEntries(diff.added, localValues)
+      : { entries: [], missing: [] as SecretRef[] };
+
+    for (const ref of addedResolution.missing) {
+      console.error(
+        `  ${RED}✗ Missing local value for ${formatSecretLabel(ref)}; skipped.${RESET}`
+      );
+    }
+
+    if (isDryRun) {
       if (addedResolution.entries.length > 0) {
         console.log(
-          `  ${DIM}Writing ${addedResolution.entries.length} new secret(s) to ${backend.name}...${RESET}`
+          `  ${DIM}Would write ${addedResolution.entries.length} new secret(s) to ${backend.name}.${RESET}`
         );
-        for (const entry of addedResolution.entries) {
-          try {
-            await backend.write(entry);
-            console.log(
-              `  ${GREEN}✓ ${formatSecretLabel(entry.ref)} → ${backend.name}${RESET}`
-            );
-          } catch (err) {
-            console.error(
-              `  ${RED}✗ ${formatSecretLabel(entry.ref)} — ${
-                err instanceof Error ? err.message : err
-              }${RESET}`
-            );
-          }
-        }
       }
-
       if (changedValues.length > 0) {
-        for (const entry of changedValues) {
-          const confirm = await promptYesNo(
-            `  ${YELLOW}Overwrite ${formatSecretLabel(entry.ref)} in ${backend.name}? [y/N]:${RESET} `
-          );
-          if (!confirm) {
-            console.log(`  ${DIM}Skipped ${formatSecretLabel(entry.ref)}${RESET}`);
-            continue;
-          }
+        console.log(
+          `  ${DIM}Would prompt to overwrite ${changedValues.length} existing secret(s) in ${backend.name}.${RESET}`
+        );
+      }
+      if (diff?.removed.length) {
+        console.log(
+          `  ${DIM}Would prompt to delete ${diff.removed.length} secret(s) from ${backend.name}.${RESET}`
+        );
+      }
+      console.log(`  ${DIM}(dry-run: no secrets were changed)${RESET}`);
+      return;
+    }
 
-          try {
-            await backend.write({ ref: entry.ref, value: entry.localValue });
-            console.log(
-              `  ${GREEN}✓ Updated ${formatSecretLabel(entry.ref)} in ${backend.name}${RESET}`
-            );
-          } catch (err) {
-            console.error(
-              `  ${RED}✗ Update ${formatSecretLabel(entry.ref)} — ${
-                err instanceof Error ? err.message : err
-              }${RESET}`
-            );
-          }
+    if (addedResolution.entries.length > 0) {
+      console.log(
+        `  ${DIM}Writing ${addedResolution.entries.length} new secret(s) to ${backend.name}...${RESET}`
+      );
+      for (const entry of addedResolution.entries) {
+        try {
+          await backend.write(entry);
+          console.log(
+            `  ${GREEN}✓ ${formatSecretLabel(entry.ref)} → ${backend.name}${RESET}`
+          );
+        } catch (err) {
+          console.error(
+            `  ${RED}✗ ${formatSecretLabel(entry.ref)} — ${
+              err instanceof Error ? err.message : err
+            }${RESET}`
+          );
         }
       }
+    }
 
-      if (diff?.removed.length) {
-        if (!backend.delete) {
-          console.error(
-            `  ✗ ${backend.name} backend does not support deleting secrets in push yet.`
-          );
+    if (changedValues.length > 0) {
+      for (const entry of changedValues) {
+        const confirm = await promptYesNo(
+          `  ${YELLOW}Overwrite ${formatSecretLabel(entry.ref)} in ${backend.name}? [y/N]:${RESET} `
+        );
+        if (!confirm) {
+          console.log(`  ${DIM}Skipped ${formatSecretLabel(entry.ref)}${RESET}`);
           continue;
         }
 
-        for (const ref of diff.removed) {
-          const confirm = await promptYesNo(
-            `  ${YELLOW}Delete ${formatSecretLabel(ref)} from ${backend.name}? [y/N]:${RESET} `
+        try {
+          await backend.write({ ref: entry.ref, value: entry.localValue });
+          console.log(
+            `  ${GREEN}✓ Updated ${formatSecretLabel(entry.ref)} in ${backend.name}${RESET}`
           );
-          if (!confirm) {
-            console.log(`  ${DIM}Skipped ${formatSecretLabel(ref)}${RESET}`);
-            continue;
-          }
+        } catch (err) {
+          console.error(
+            `  ${RED}✗ Update ${formatSecretLabel(entry.ref)} — ${
+              err instanceof Error ? err.message : err
+            }${RESET}`
+          );
+        }
+      }
+    }
 
-          try {
-            await backend.delete(ref);
-            console.log(
-              `  ${GREEN}✓ Deleted ${formatSecretLabel(ref)} from ${backend.name}${RESET}`
-            );
-          } catch (err) {
-            console.error(
-              `  ${RED}✗ Delete ${formatSecretLabel(ref)} — ${
-                err instanceof Error ? err.message : err
-              }${RESET}`
-            );
-          }
+    if (diff?.removed.length) {
+      if (!backend.delete) {
+        console.error(
+          `  ✗ ${backend.name} backend does not support deleting secrets in push yet.`
+        );
+        return;
+      }
+
+      for (const ref of diff.removed) {
+        const confirm = await promptYesNo(
+          `  ${YELLOW}Delete ${formatSecretLabel(ref)} from ${backend.name}? [y/N]:${RESET} `
+        );
+        if (!confirm) {
+          console.log(`  ${DIM}Skipped ${formatSecretLabel(ref)}${RESET}`);
+          continue;
+        }
+
+        try {
+          await backend.delete(ref);
+          console.log(
+            `  ${GREEN}✓ Deleted ${formatSecretLabel(ref)} from ${backend.name}${RESET}`
+          );
+        } catch (err) {
+          console.error(
+            `  ${RED}✗ Delete ${formatSecretLabel(ref)} — ${
+              err instanceof Error ? err.message : err
+            }${RESET}`
+          );
         }
       }
     }

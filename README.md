@@ -61,16 +61,16 @@ Or add scripts to your `package.json`:
 ## How It Works
 
 ```
-shipkey scan     →  Detect .env files, workflows, wrangler configs
+shipkey scan     →  Detect files in the current directory
                     Generate shipkey.json with providers & permissions
 
 shipkey setup    →  Open browser wizard to enter API keys
                     Save to password manager + local .env.local/.dev.vars
 
-shipkey pull     →  Restore all keys from password manager to local files
+shipkey pull     →  Restore keys for the current directory
                     New machine ready in seconds
 
-shipkey sync     →  Push secrets to GitHub Actions, Cloudflare Workers
+shipkey sync     →  Push secrets for the current directory
                     One command, all platforms
 ```
 
@@ -112,12 +112,14 @@ The wizard provides:
 
 ### `shipkey scan [dir]`
 
-Scan your project and generate `shipkey.json`.
+Scan the current directory and generate `shipkey.json`.
 
 ```bash
-shipkey scan                   # Scan and write config
+shipkey scan                   # Scan current directory and write config
 shipkey scan --dry-run         # Preview without writing
 ```
+
+`shipkey scan` previews the detected changes first, and only writes `shipkey.json` after confirmation when changes are found.
 
 Detects:
 - `.env`, `.env.local`, `.env.example`, `.dev.vars`, `.envrc`
@@ -129,7 +131,7 @@ Auto-infers required permissions per provider.
 
 ### `shipkey push [dir]`
 
-Push local env values to your password manager.
+Push local env values from the current directory to your password manager.
 
 ```bash
 shipkey push                   # Push dev env
@@ -139,11 +141,12 @@ shipkey push --vault myteam    # Custom vault
 
 ### `shipkey pull [dir]`
 
-Pull secrets from your password manager and generate local env files.
+Pull secrets for the current directory and generate local env files.
 
 ```bash
 shipkey pull                   # Pull dev env
 shipkey pull -e prod           # Pull prod env
+shipkey pull --dry-run         # Preview pull diff without writing files
 shipkey pull --no-envrc        # Skip .envrc generation
 shipkey pull --no-dev-vars     # Skip .dev.vars generation
 ```
@@ -154,7 +157,7 @@ Generates:
 
 ### `shipkey sync [target] [dir]`
 
-Sync secrets to external platforms.
+Sync secrets for the current directory to external platforms.
 
 ```bash
 shipkey sync                   # Sync all targets

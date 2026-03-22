@@ -1,13 +1,13 @@
 import { Command } from "commander";
-import { resolve, relative } from "path";
+import { resolve } from "path";
 import { getBackend } from "../backends";
 import type { SecretBackend } from "../backends/types";
 import { GitHubTarget } from "../targets/github";
 import { CloudflareTarget } from "../targets/cloudflare";
 import type { SyncTarget } from "../targets/types";
 import { loadConfig, buildSecretRefMap } from "../config";
-import { walkDirsWithShipkey } from "../scanner";
 import type { TargetConfig } from "../config";
+import { resolveProjectDir } from "./project-scope";
 
 const TARGETS: Record<string, SyncTarget> = {
   github: new GitHubTarget(),
@@ -116,63 +116,59 @@ async function syncTarget(
 
 export const syncCommand = new Command("sync")
   .description(
-    "Sync secrets to external platforms (GitHub Actions, Cloudflare)"
+    "Sync secrets for the current directory to external platforms"
   )
   .argument("[target]", "target platform (github, cloudflare)")
   .argument("[dir]", "project directory", ".")
   .action(async (targetArg: string | undefined, dir: string) => {
     const projectRoot = resolve(dir);
-
-    const shipkeyDirs = await walkDirsWithShipkey(projectRoot);
-
-    if (shipkeyDirs.length === 0) {
+    const projectDir = await resolveProjectDir(projectRoot);
+    if (!projectDir) {
       console.error("  No shipkey.json found. Run `shipkey scan` first.");
       process.exit(1);
     }
 
-    for (const d of shipkeyDirs) {
-      const relDir = relative(projectRoot, d) || ".";
+    const d = projectDir;
 
-      let config;
-      try {
-        config = await loadConfig(d);
-      } catch {
-        console.error(`  ✗ Could not read shipkey.json in ${relDir}`);
-        continue;
-      }
+    let config;
+    try {
+      config = await loadConfig(d);
+    } catch {
+      console.error("  ✗ Could not read shipkey.json in .");
+      process.exit(1);
+    }
 
-      if (!config.targets) continue;
+    if (!config.targets) return;
 
-      console.log(`\n  [${relDir}]`);
+    console.log(`\n  [.]`);
 
-      const backend = getBackend(config.backend);
-      if (!(await backend.isAvailable())) {
+    const backend = getBackend(config.backend);
+    if (!(await backend.isAvailable())) {
+      console.error(
+        `  ✗ ${backend.name} CLI not available. Run 'shipkey setup' for installation instructions.`
+      );
+      process.exit(1);
+    }
+
+    const refMap = buildSecretRefMap(config, backend);
+
+    const targetNames = targetArg
+      ? [targetArg]
+      : Object.keys(config.targets);
+
+    for (const name of targetNames) {
+      const target = TARGETS[name];
+      if (!target) {
         console.error(
-          `  ✗ ${backend.name} CLI not available. Run 'shipkey setup' for installation instructions.`
+          `  Unknown target: ${name}. Available: ${Object.keys(TARGETS).join(", ")}`
         );
         continue;
       }
 
-      const refMap = buildSecretRefMap(config, backend);
+      const targetConfig =
+        config.targets[name as keyof typeof config.targets];
+      if (!targetConfig) continue;
 
-      const targetNames = targetArg
-        ? [targetArg]
-        : Object.keys(config.targets);
-
-      for (const name of targetNames) {
-        const target = TARGETS[name];
-        if (!target) {
-          console.error(
-            `  Unknown target: ${name}. Available: ${Object.keys(TARGETS).join(", ")}`
-          );
-          continue;
-        }
-
-        const targetConfig =
-          config.targets[name as keyof typeof config.targets];
-        if (!targetConfig) continue;
-
-        await syncTarget(target, targetConfig, refMap, backend);
-      }
+      await syncTarget(target, targetConfig, refMap, backend);
     }
   });

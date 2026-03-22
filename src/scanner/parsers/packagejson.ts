@@ -36,7 +36,30 @@ async function walkForPackageJsons(
   }
 }
 
-export async function scanPackageJsons(
+export async function scanPackageJson(
+  projectRoot: string
+): Promise<PackageJsonScanResult> {
+  const filePath = join(projectRoot, "package.json");
+  const allDeps = new Set<string>();
+
+  try {
+    const content = await readFile(filePath, "utf-8");
+    const pkg = JSON.parse(content);
+
+    for (const dep of Object.keys(pkg.dependencies || {})) {
+      allDeps.add(dep);
+    }
+    for (const dep of Object.keys(pkg.devDependencies || {})) {
+      allDeps.add(dep);
+    }
+  } catch {
+    // skip missing or invalid package.json
+  }
+
+  return { dependencies: [...allDeps] };
+}
+
+export async function scanPackageJsonsRecursive(
   projectRoot: string
 ): Promise<PackageJsonScanResult> {
   const files: string[] = [];

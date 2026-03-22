@@ -3,7 +3,10 @@ import { readFile } from "fs/promises";
 import { scan, scanSingleDir, walkDirsWithEnv } from "./index";
 import { scanWorkflows, detectGitRepo } from "./parsers/workflow";
 import { scanWrangler } from "./parsers/wrangler";
-import { scanPackageJsons } from "./parsers/packagejson";
+import {
+  scanPackageJson,
+  scanPackageJsonsRecursive,
+} from "./parsers/packagejson";
 import { inferPermissions } from "./permissions";
 import { groupByProvider, isSecretKey } from "../providers";
 import type { ShipkeyConfig, TargetConfig } from "../config";
@@ -39,7 +42,7 @@ export async function scanProject(
       scanWorkflows(projectRoot),
       scanWrangler(projectRoot),
       detectGitRepo(projectRoot),
-      scanPackageJsons(projectRoot),
+      scanPackageJson(projectRoot),
     ]);
 
   const envKeys = collectEnvKeys(envResult);
@@ -50,8 +53,12 @@ export async function scanProject(
   }
 
   // Split keys: secrets → providers, non-secrets → defaults
-  const secretKeys = [...allKeys].filter((k) => isSecretKey(k));
-  const defaultKeys = [...allKeys].filter((k) => !isSecretKey(k));
+  const secretKeys = sortStrings(
+    [...allKeys].filter((k) => isSecretKey(k))
+  );
+  const defaultKeys = sortStrings(
+    [...allKeys].filter((k) => !isSecretKey(k))
+  );
 
   const providers = groupByProvider(secretKeys);
 
@@ -63,12 +70,7 @@ export async function scanProject(
     workflowResult.wranglerCommands
   );
 
-  const targets = buildTargets(
-    workflowResult,
-    wranglerResult,
-    gitRepo,
-    envResult
-  );
+  const targets = buildTargets(workflowResult, wranglerResult, gitRepo, envResult);
 
   // Build defaults with values from non-template .env files
   const envValues = collectEnvValues(envResult);
@@ -79,14 +81,14 @@ export async function scanProject(
 
   const projectName = await detectProjectName(projectRoot, scanRoot);
 
-  const config: ShipkeyConfig = {
+  const config = canonicalizeConfig({
     project: projectName,
     vault: "shipkey",
     env: "dev",
     ...(Object.keys(defaults).length > 0 && { defaults }),
     providers,
     ...(Object.keys(targets).length > 0 && { targets }),
-  };
+  });
 
   const stats: ProjectScanStats = {
     envFiles: envResult.totalFiles,
@@ -95,10 +97,10 @@ export async function scanProject(
     workflowSecrets: workflowResult.secrets.length,
     gitRepo,
     wranglerFile: wranglerResult.file,
-    wranglerProjects: wranglerResult.projects,
+    wranglerProjects: sortStrings(wranglerResult.projects),
   };
 
-  return { config, stats, workflowSecrets: workflowResult.secrets };
+  return { config, stats, workflowSecrets: sortStrings(workflowResult.secrets) };
 }
 
 // Walk from root, scan every directory that contains .env files
@@ -122,7 +124,7 @@ export async function scanProjectRecursive(
       scanWorkflows(projectRoot),
       scanWrangler(projectRoot),
       detectGitRepo(projectRoot),
-      scanPackageJsons(projectRoot),
+      scanPackageJsonsRecursive(projectRoot),
     ]);
 
   const envKeys = collectEnvKeys(envResult);
@@ -132,8 +134,12 @@ export async function scanProjectRecursive(
     allKeys.add(secret);
   }
 
-  const secretKeys = [...allKeys].filter((k) => isSecretKey(k));
-  const defaultKeys = [...allKeys].filter((k) => !isSecretKey(k));
+  const secretKeys = sortStrings(
+    [...allKeys].filter((k) => isSecretKey(k))
+  );
+  const defaultKeys = sortStrings(
+    [...allKeys].filter((k) => !isSecretKey(k))
+  );
 
   const providers = groupByProvider(secretKeys);
 
@@ -145,12 +151,7 @@ export async function scanProjectRecursive(
     workflowResult.wranglerCommands
   );
 
-  const targets = buildTargets(
-    workflowResult,
-    wranglerResult,
-    gitRepo,
-    envResult
-  );
+  const targets = buildTargets(workflowResult, wranglerResult, gitRepo, envResult);
 
   const envValues = collectEnvValues(envResult);
   const defaults: Record<string, string> = {};
@@ -160,14 +161,14 @@ export async function scanProjectRecursive(
 
   const projectName = await detectProjectName(projectRoot);
 
-  const config: ShipkeyConfig = {
+  const config = canonicalizeConfig({
     project: projectName,
     vault: "shipkey",
     env: "dev",
     ...(Object.keys(defaults).length > 0 && { defaults }),
     providers,
     ...(Object.keys(targets).length > 0 && { targets }),
-  };
+  });
 
   const stats: ProjectScanStats = {
     envFiles: envResult.totalFiles,
@@ -176,10 +177,10 @@ export async function scanProjectRecursive(
     workflowSecrets: workflowResult.secrets.length,
     gitRepo,
     wranglerFile: wranglerResult.file,
-    wranglerProjects: wranglerResult.projects,
+    wranglerProjects: sortStrings(wranglerResult.projects),
   };
 
-  return { config, stats, workflowSecrets: workflowResult.secrets };
+  return { config, stats, workflowSecrets: sortStrings(workflowResult.secrets) };
 }
 
 function collectEnvKeys(result: ScanResult): string[] {
@@ -192,6 +193,69 @@ function collectEnvKeys(result: ScanResult): string[] {
     }
   }
   return [...keys];
+}
+
+function sortStrings(values: string[]): string[] {
+  return [...values].sort((a, b) => a.localeCompare(b));
+}
+
+function sortObjectEntries<T>(
+  record: Record<string, T>,
+  mapValue?: (value: T, key: string) => T
+): Record<string, T> {
+  const sorted: Record<string, T> = {};
+  for (const [key, value] of Object.entries(record).sort(([a], [b]) =>
+    a.localeCompare(b)
+  )) {
+    sorted[key] = mapValue ? mapValue(value, key) : value;
+  }
+  return sorted;
+}
+
+function canonicalizeProviders(
+  providers: Record<string, NonNullable<ShipkeyConfig["providers"]>[string]>
+): Record<string, NonNullable<ShipkeyConfig["providers"]>[string]> {
+  return sortObjectEntries(providers, (provider) => ({
+    ...provider,
+    fields: sortStrings(provider.fields),
+    ...(provider.permissions && {
+      permissions: [...provider.permissions].sort((a, b) =>
+        a.permission.localeCompare(b.permission) ||
+        a.source.localeCompare(b.source)
+      ),
+    }),
+  }));
+}
+
+function canonicalizeTargets(
+  targets: NonNullable<ShipkeyConfig["targets"]>
+): NonNullable<ShipkeyConfig["targets"]> {
+  const sorted: NonNullable<ShipkeyConfig["targets"]> = {};
+
+  if (targets.github) {
+    sorted.github = sortObjectEntries(targets.github, (values) =>
+      Array.isArray(values) ? sortStrings(values) : sortObjectEntries(values)
+    );
+  }
+
+  if (targets.cloudflare) {
+    sorted.cloudflare = sortObjectEntries(targets.cloudflare, (values) =>
+      Array.isArray(values) ? sortStrings(values) : sortObjectEntries(values)
+    );
+  }
+
+  return sorted;
+}
+
+function canonicalizeConfig(config: ShipkeyConfig): ShipkeyConfig {
+  return {
+    ...config,
+    ...(config.defaults && { defaults: sortObjectEntries(config.defaults) }),
+    ...(config.providers && {
+      providers: canonicalizeProviders(config.providers),
+    }),
+    ...(config.targets && { targets: canonicalizeTargets(config.targets) }),
+  };
 }
 
 /** Collect key→value from non-template .env files (first real value wins) */
@@ -392,5 +456,5 @@ function collectDevVarsKeys(result: ScanResult): string[] {
       }
     }
   }
-  return [...keys];
+  return sortStrings([...keys]);
 }

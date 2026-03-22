@@ -1,5 +1,10 @@
 import { describe, test, expect } from "bun:test";
-import { diffDefaults, diffProviders } from "../../src/commands/scan";
+import {
+  diffConfigMeta,
+  diffDefaults,
+  diffProviders,
+  diffTargets,
+} from "../../src/commands/scan";
 
 describe("diffDefaults", () => {
   test("returns null when no changes", () => {
@@ -163,6 +168,97 @@ describe("diffProviders", () => {
 
   test("returns null when both are undefined", () => {
     const result = diffProviders(undefined, undefined);
+    expect(result).toBeNull();
+  });
+});
+
+describe("diffConfigMeta", () => {
+  test("detects top-level config changes", () => {
+    const result = diffConfigMeta(
+      {
+        project: "myapp",
+        vault: "shipkey",
+        env: "dev",
+        backend: "1password",
+      },
+      {
+        project: "myapp-renamed",
+        vault: "shipkey",
+        env: "prod",
+        backend: "bitwarden",
+      }
+    );
+
+    expect(result).toEqual({
+      changed: [
+        ["project", "myapp", "myapp-renamed"],
+        ["env", "dev", "prod"],
+        ["backend", "1password", "bitwarden"],
+      ],
+    });
+  });
+
+  test("returns null when top-level config is unchanged", () => {
+    const result = diffConfigMeta(
+      {
+        project: "myapp",
+        vault: "shipkey",
+        env: "dev",
+        backend: "1password",
+      },
+      {
+        project: "myapp",
+        vault: "shipkey",
+        env: "dev",
+        backend: "1password",
+      }
+    );
+
+    expect(result).toBeNull();
+  });
+});
+
+describe("diffTargets", () => {
+  test("detects added and removed target entries", () => {
+    const result = diffTargets(
+      {
+        github: {
+          "owner/repo": ["OLD_SECRET", "SAME_SECRET"],
+        },
+      },
+      {
+        github: {
+          "owner/repo": ["NEW_SECRET", "SAME_SECRET"],
+        },
+        cloudflare: {
+          worker: ["CF_SECRET"],
+        },
+      }
+    );
+
+    expect(result).toEqual({
+      added: [
+        "cloudflare/worker:CF_SECRET",
+        "github/owner/repo:NEW_SECRET",
+      ],
+      removed: ["github/owner/repo:OLD_SECRET"],
+    });
+  });
+
+  test("returns null when targets are unchanged", () => {
+    const result = diffTargets(
+      {
+        github: {
+          "owner/repo": ["SECRET_A", "SECRET_B"],
+        },
+      },
+      {
+        github: {
+          "owner/repo": ["SECRET_B", "SECRET_A"],
+        },
+      }
+    );
+
     expect(result).toBeNull();
   });
 });

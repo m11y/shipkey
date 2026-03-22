@@ -61,16 +61,16 @@ bunx shipkey pull
 ## 工作流程
 
 ```
-shipkey scan     →  检测 .env 文件、工作流、wrangler 配置
+shipkey scan     →  检测当前目录中的文件
                     生成 shipkey.json（含 providers 和权限推荐）
 
 shipkey setup    →  打开浏览器向导输入 API 密钥
                     保存到密码管理器 + 本地 .env.local/.dev.vars
 
-shipkey pull     →  从密码管理器恢复所有密钥到本地文件
+shipkey pull     →  为当前目录恢复密钥到本地文件
                     新电脑数秒就绪
 
-shipkey sync     →  推送密钥到 GitHub Actions、Cloudflare Workers
+shipkey sync     →  将当前目录的密钥推送到 GitHub Actions、Cloudflare Workers
                     一条命令，所有平台
 ```
 
@@ -112,12 +112,14 @@ shipkey setup --no-open        # 不自动打开浏览器
 
 ### `shipkey scan [dir]`
 
-扫描项目并生成 `shipkey.json`。
+扫描当前目录并生成 `shipkey.json`。
 
 ```bash
-shipkey scan                   # 扫描并写入配置
+shipkey scan                   # 扫描当前目录并写入配置
 shipkey scan --dry-run         # 预览，不写入文件
 ```
+
+`shipkey scan` 会先展示检测到的变更，只有在存在变化且确认后才会写入 `shipkey.json`。
 
 检测范围：
 - `.env`、`.env.local`、`.env.example`、`.dev.vars`、`.envrc`
@@ -129,7 +131,7 @@ shipkey scan --dry-run         # 预览，不写入文件
 
 ### `shipkey push [dir]`
 
-将本地环境变量推送到密码管理器。
+将当前目录中的本地环境变量推送到密码管理器。
 
 ```bash
 shipkey push                   # 推送 dev 环境
@@ -139,11 +141,12 @@ shipkey push --vault myteam    # 自定义保险库
 
 ### `shipkey pull [dir]`
 
-从密码管理器拉取密钥并生成本地 env 文件。
+从密码管理器拉取当前目录的密钥并生成本地 env 文件。
 
 ```bash
 shipkey pull                   # 拉取 dev 环境
 shipkey pull -e prod           # 拉取 prod 环境
+shipkey pull --dry-run         # 预览拉取 diff，但不写文件
 shipkey pull --no-envrc        # 跳过 .envrc 生成
 shipkey pull --no-dev-vars     # 跳过 .dev.vars 生成
 ```
@@ -154,7 +157,7 @@ shipkey pull --no-dev-vars     # 跳过 .dev.vars 生成
 
 ### `shipkey sync [target] [dir]`
 
-将密钥同步到外部平台。
+将当前目录的密钥同步到外部平台。
 
 ```bash
 shipkey sync                   # 同步所有目标

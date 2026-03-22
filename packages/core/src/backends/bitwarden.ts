@@ -266,6 +266,15 @@ export class BitwardenBackend implements SecretBackend {
     env?: string,
     vault = "shipkey",
   ): Promise<SecretRef[]> {
+    const entries = await this.listEntries(project, env, vault);
+    return entries.map(({ ref }) => ref);
+  }
+
+  async listEntries(
+    project?: string,
+    env?: string,
+    vault = "shipkey",
+  ): Promise<SecretEntry[]> {
     await this.ensureUnlocked();
 
     // Find the folder
@@ -281,7 +290,7 @@ export class BitwardenBackend implements SecretBackend {
       folder.id,
     ]);
     const items: BwItem[] = JSON.parse(itemsRaw);
-    const refs: SecretRef[] = [];
+    const entries: SecretEntry[] = [];
 
     for (const item of items) {
       const parsedItem = BitwardenBackend.parseItemName(item.name);
@@ -295,16 +304,19 @@ export class BitwardenBackend implements SecretBackend {
         const parsed = BitwardenBackend.parseFieldName(field.name);
         if (!parsed) continue;
 
-        refs.push({
-          vault,
-          provider: parsed.provider,
-          project: parsedItem.project,
-          env: parsedItem.env,
-          field: parsed.field,
+        entries.push({
+          ref: {
+            vault,
+            provider: parsed.provider,
+            project: parsedItem.project,
+            env: parsedItem.env,
+            field: parsed.field,
+          },
+          value: field.value,
         });
       }
     }
 
-    return refs;
+    return entries;
   }
 }

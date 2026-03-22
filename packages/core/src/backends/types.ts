@@ -19,6 +19,7 @@ export interface SecretBackend {
   write(entry: SecretEntry): Promise<void>;
   delete?(ref: SecretRef): Promise<void>;
   list(project?: string, env?: string, vault?: string): Promise<SecretRef[]>;
+  listEntries?(project?: string, env?: string, vault?: string): Promise<SecretEntry[]>;
   /** Return an inline reference (e.g. op:// URI) for use in .envrc, or null if the backend doesn't support inline refs */
   buildInlineRef?(ref: SecretRef): string | null;
 }

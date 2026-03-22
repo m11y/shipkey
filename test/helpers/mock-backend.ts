@@ -58,6 +58,28 @@ export class MockBackend implements SecretBackend {
     return refs;
   }
 
+  async listEntries(project?: string, env?: string, vault?: string) {
+    this.calls.push({ method: "listEntries", args: [project, env, vault] });
+    const entries: SecretEntry[] = [];
+    for (const [key, value] of this.store) {
+      const parts = key.split("/");
+      if (parts.length !== 4) continue;
+      const [storedVault, provider, section, field] = parts;
+      const dashIndex = section.lastIndexOf("-");
+      if (dashIndex === -1) continue;
+      const proj = section.slice(0, dashIndex);
+      const e = section.slice(dashIndex + 1);
+      if (vault && storedVault !== vault) continue;
+      if (project && proj !== project) continue;
+      if (env && e !== env) continue;
+      entries.push({
+        ref: { vault: storedVault, provider, project: proj, env: e, field },
+        value,
+      });
+    }
+    return entries;
+  }
+
   buildInlineRef() {
     return null;
   }
