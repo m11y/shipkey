@@ -172,4 +172,15 @@ describe("project scanning scope", () => {
       },
     });
   });
+
+  test("scanProject treats POSTGRES_DSN as a secret", async () => {
+    writeFileSync(join(TMP, ".env"), "POSTGRES_DSN=postgres://user:pass@db/app\n");
+
+    const result = await scanProject(TMP, TMP);
+
+    expect(result.config.defaults).toBeUndefined();
+    expect(result.config.providers?.General).toEqual({
+      fields: ["POSTGRES_DSN"],
+    });
+  });
 });

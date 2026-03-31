@@ -21,6 +21,10 @@ describe("isSecretKey", () => {
     expect(isSecretKey("JWT_AUTH_SECRET")).toBe(true);
   });
 
+  test("explicitly listed connection keys are secrets", () => {
+    expect(isSecretKey("POSTGRES_DSN")).toBe(true);
+  });
+
   test("plain config keys are NOT secrets", () => {
     expect(isSecretKey("PORT")).toBe(false);
     expect(isSecretKey("NODE_ENV")).toBe(false);

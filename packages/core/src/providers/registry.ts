@@ -299,6 +299,7 @@ export function guessProvider(key: string): string {
 }
 
 const SECRET_PATTERNS = /(?:SECRET|_KEY|TOKEN|PASSWORD|CREDENTIAL|PRIVATE|AUTH)/i;
+const SECRET_EXACT_KEYS = new Set(["POSTGRES_DSN"]);
 
 /**
  * Determine if an env key is likely a secret (should go to password manager)
@@ -307,6 +308,8 @@ const SECRET_PATTERNS = /(?:SECRET|_KEY|TOKEN|PASSWORD|CREDENTIAL|PRIVATE|AUTH)/
 export function isSecretKey(key: string): boolean {
   // Matches a known provider → secret
   if (guessProvider(key) !== "General") return true;
+  // Explicitly mark connection-string style env vars we know should be vaulted.
+  if (SECRET_EXACT_KEYS.has(key)) return true;
   // Key name contains sensitive words → secret
   if (SECRET_PATTERNS.test(key)) return true;
   return false;
