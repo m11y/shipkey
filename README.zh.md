@@ -121,6 +121,20 @@ shipkey scan --dry-run         # 预览，不写入文件
 
 `shipkey scan` 会先展示检测到的变更，只有在存在变化且确认后才会写入 `shipkey.json`。
 
+你可以在 `.env` 里用上一行 directive 注释覆盖 secret 判定：
+
+```dotenv
+# shipkey: secret
+APNS_TEAM_ID=ABCDE12345
+
+# shipkey: secret=false
+NEXT_PUBLIC_API_KEY=demo
+
+APNS_KEY_ID=ABC123 # shipkey: secret
+```
+
+该 directive 可以写在上一行，也可以写在同一行尾部注释里；如果不写，shipkey 会继续使用默认的 secret 启发式判定。
+
 检测范围：
 - `.env`、`.env.local`、`.env.example`、`.dev.vars`、`.envrc`
 - GitHub Actions 工作流 secrets

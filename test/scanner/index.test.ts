@@ -1,11 +1,13 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
+import { tmpdir } from "os";
 import { scan } from "../../src/scanner";
 
-const TMP = join(import.meta.dir, "__fixtures__");
+let TMP: string;
 
 beforeEach(() => {
+  TMP = mkdtempSync(join(tmpdir(), "shipkey-scan-test-"));
   mkdirSync(join(TMP, "apps/api"), { recursive: true });
   mkdirSync(join(TMP, "node_modules/pkg"), { recursive: true });
 

@@ -121,6 +121,20 @@ shipkey scan --dry-run         # プレビューのみ（書き込みなし）
 
 `shipkey scan` はまず差分を表示し、変更がある場合だけ確認後に `shipkey.json` を書き込みます。
 
+`.env` では直前の directive コメントで secret 判定を上書きできます:
+
+```dotenv
+# shipkey: secret
+APNS_TEAM_ID=ABCDE12345
+
+# shipkey: secret=false
+NEXT_PUBLIC_API_KEY=demo
+
+APNS_KEY_ID=ABC123 # shipkey: secret
+```
+
+この directive は直前の行にも同じ行末コメントにも書けます。指定がない場合、shipkey は通常の secret 判定ヒューリスティクスを使います。
+
 検出対象：
 - `.env`、`.env.local`、`.env.example`、`.dev.vars`、`.envrc`
 - GitHub Actions ワークフローの secrets

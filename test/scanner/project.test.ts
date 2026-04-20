@@ -1,15 +1,17 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { execSync } from "child_process";
-import { mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
+import { tmpdir } from "os";
 import {
   scanProject,
   scanProjectRecursive,
 } from "../../src/scanner/project";
 
-const TMP = join(import.meta.dir, "__project_fixtures__");
+let TMP: string;
 
 beforeEach(() => {
+  TMP = mkdtempSync(join(tmpdir(), "shipkey-project-test-"));
   mkdirSync(join(TMP, "apps/api"), { recursive: true });
 
   writeFileSync(join(TMP, ".env"), "ROOT_KEY=root\n");
@@ -181,6 +183,27 @@ describe("project scanning scope", () => {
     expect(result.config.defaults).toBeUndefined();
     expect(result.config.providers?.General).toEqual({
       fields: ["POSTGRES_DSN"],
+    });
+  });
+
+  test("scanProject respects shipkey secret directives over heuristics", async () => {
+    writeFileSync(
+      join(TMP, ".env"),
+      [
+        "# shipkey: secret",
+        "APNS_TEAM_ID=ABCDE12345",
+        "# shipkey: secret=false",
+        "NEXT_PUBLIC_API_KEY=demo",
+      ].join("\n") + "\n"
+    );
+
+    const result = await scanProject(TMP, TMP);
+
+    expect(result.config.providers?.General).toEqual({
+      fields: ["APNS_TEAM_ID"],
+    });
+    expect(result.config.defaults).toEqual({
+      NEXT_PUBLIC_API_KEY: "demo",
     });
   });
 });

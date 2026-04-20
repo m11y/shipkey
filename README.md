@@ -121,6 +121,20 @@ shipkey scan --dry-run         # Preview without writing
 
 `shipkey scan` previews the detected changes first, and only writes `shipkey.json` after confirmation when changes are found.
 
+You can override secret detection in `.env` files with a directive comment on the line above:
+
+```dotenv
+# shipkey: secret
+APNS_TEAM_ID=ABCDE12345
+
+# shipkey: secret=false
+NEXT_PUBLIC_API_KEY=demo
+
+APNS_KEY_ID=ABC123 # shipkey: secret
+```
+
+The directive can be placed on the line above or as a trailing comment on the same line. If omitted, shipkey falls back to its normal secret-detection heuristics.
+
 Detects:
 - `.env`, `.env.local`, `.env.example`, `.dev.vars`, `.envrc`
 - GitHub Actions workflow secrets

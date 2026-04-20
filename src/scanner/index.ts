@@ -70,6 +70,7 @@ export async function scan(projectRoot: string): Promise<ScanResult> {
       value: template ? undefined : v.value,
       source: file.path,
       isTemplate: template,
+      ...(v.directive && { directive: v.directive }),
     }));
 
     const groupKey = dirname(file.path) === "." ? "." : dirname(file.path);
@@ -121,6 +122,7 @@ export async function scanSingleDir(dir: string): Promise<ScanResult> {
       value: template ? undefined : v.value,
       source: file.path,
       isTemplate: template,
+      ...(v.directive && { directive: v.directive }),
     }));
 
     if (!groupMap.has(".")) groupMap.set(".", []);

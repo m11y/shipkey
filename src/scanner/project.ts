@@ -46,6 +46,8 @@ export async function scanProject(
     ]);
 
   const envKeys = collectEnvKeys(envResult);
+  const secretOverrides = collectSecretOverrides(envResult);
+  const workflowSecrets = new Set(workflowResult.secrets);
 
   const allKeys = new Set(envKeys);
   for (const secret of workflowResult.secrets) {
@@ -54,10 +56,10 @@ export async function scanProject(
 
   // Split keys: secrets → providers, non-secrets → defaults
   const secretKeys = sortStrings(
-    [...allKeys].filter((k) => isSecretKey(k))
+    [...allKeys].filter((k) => classifySecretKey(k, secretOverrides, workflowSecrets))
   );
   const defaultKeys = sortStrings(
-    [...allKeys].filter((k) => !isSecretKey(k))
+    [...allKeys].filter((k) => !classifySecretKey(k, secretOverrides, workflowSecrets))
   );
 
   const providers = groupByProvider(secretKeys);
@@ -128,6 +130,8 @@ export async function scanProjectRecursive(
     ]);
 
   const envKeys = collectEnvKeys(envResult);
+  const secretOverrides = collectSecretOverrides(envResult);
+  const workflowSecrets = new Set(workflowResult.secrets);
 
   const allKeys = new Set(envKeys);
   for (const secret of workflowResult.secrets) {
@@ -135,10 +139,10 @@ export async function scanProjectRecursive(
   }
 
   const secretKeys = sortStrings(
-    [...allKeys].filter((k) => isSecretKey(k))
+    [...allKeys].filter((k) => classifySecretKey(k, secretOverrides, workflowSecrets))
   );
   const defaultKeys = sortStrings(
-    [...allKeys].filter((k) => !isSecretKey(k))
+    [...allKeys].filter((k) => !classifySecretKey(k, secretOverrides, workflowSecrets))
   );
 
   const providers = groupByProvider(secretKeys);
@@ -193,6 +197,36 @@ function collectEnvKeys(result: ScanResult): string[] {
     }
   }
   return [...keys];
+}
+
+function collectSecretOverrides(result: ScanResult): Map<string, boolean> {
+  const fallback = new Map<string, boolean>();
+  const preferred = new Map<string, boolean>();
+
+  for (const group of result.groups) {
+    for (const file of group.files) {
+      for (const v of file.vars) {
+        if (typeof v.directive?.secret !== "boolean") continue;
+        const target = file.isTemplate ? fallback : preferred;
+        if (!target.has(v.key)) {
+          target.set(v.key, v.directive.secret);
+        }
+      }
+    }
+  }
+
+  return new Map([...fallback, ...preferred]);
+}
+
+function classifySecretKey(
+  key: string,
+  secretOverrides: Map<string, boolean>,
+  workflowSecrets: Set<string>
+): boolean {
+  if (workflowSecrets.has(key)) return true;
+  const override = secretOverrides.get(key);
+  if (typeof override === "boolean") return override;
+  return isSecretKey(key);
 }
 
 function sortStrings(values: string[]): string[] {
