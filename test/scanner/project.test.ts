@@ -206,4 +206,18 @@ describe("project scanning scope", () => {
       NEXT_PUBLIC_API_KEY: "demo",
     });
   });
+
+  test("scanProject does not treat managed directive as secret classification", async () => {
+    writeFileSync(
+      join(TMP, ".env"),
+      "PLAIN_VALUE=demo # shipkey: managed=true\n"
+    );
+
+    const result = await scanProject(TMP, TMP);
+
+    expect(result.config.providers?.General).toBeUndefined();
+    expect(result.config.defaults).toEqual({
+      PLAIN_VALUE: "demo",
+    });
+  });
 });

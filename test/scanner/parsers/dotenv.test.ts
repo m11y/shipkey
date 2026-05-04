@@ -71,6 +71,7 @@ NEXT_PUBLIC_API_KEY=demo
     const content = `
 APNS_TEAM_ID=ABCDE12345 # shipkey: secret
 NEXT_PUBLIC_API_KEY=demo # shipkey: secret=false
+API_KEY=sk-test # shipkey: secret=true, managed=true
 `;
     const result = parseDotenv(content);
     expect(result).toEqual([
@@ -83,6 +84,11 @@ NEXT_PUBLIC_API_KEY=demo # shipkey: secret=false
         key: "NEXT_PUBLIC_API_KEY",
         value: "demo",
         directive: { secret: false },
+      },
+      {
+        key: "API_KEY",
+        value: "sk-test",
+        directive: { secret: true, managed: true },
       },
     ]);
   });
